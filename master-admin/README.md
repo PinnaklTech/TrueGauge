@@ -1,6 +1,6 @@
-# True Gauge · Master Admin
+# TrueGage · Master Admin
 
-Standalone control center for True Gauge platform admins (`platform_admin`).
+Standalone control center for TrueGage platform admins (`platform_admin`).
 
 - **URL:** http://localhost:8081  
 - **Customer app:** http://localhost:8080  

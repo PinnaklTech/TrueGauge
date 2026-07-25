@@ -610,7 +610,7 @@ def _email_settings_out(row) -> EmailSettingsOut:
         smtp_username=row.smtp_username,
         smtp_use_tls=bool(row.smtp_use_tls),
         smtp_from_email=row.smtp_from_email,
-        smtp_from_name=row.smtp_from_name or "True Gauge",
+        smtp_from_name=row.smtp_from_name or "TrueGage",
         has_password=bool(row.smtp_password_encrypted),
         last_error=row.smtp_last_error,
     )
@@ -640,7 +640,7 @@ def save_email_settings(
     row.smtp_username = (body.smtp_username or "").strip() or None
     row.smtp_use_tls = body.smtp_use_tls
     row.smtp_from_email = from_email
-    row.smtp_from_name = (body.smtp_from_name or "True Gauge").strip() or "True Gauge"
+    row.smtp_from_name = (body.smtp_from_name or "TrueGage").strip() or "TrueGage"
     if body.smtp_password and body.smtp_password.strip():
         row.smtp_password_encrypted = encrypt_secret(body.smtp_password.strip())
     elif not row.smtp_password_encrypted:
@@ -700,7 +700,7 @@ def send_email_check(
                 db,
                 tenant_id=ctx.tenant_id,
                 kind="test_check",
-                subject="True Gauge — SMTP check",
+                subject="TrueGage — SMTP check",
                 to_email=member.email,
                 to_name=member.name or "",
                 status="sent",
@@ -721,7 +721,7 @@ def send_email_check(
                 db,
                 tenant_id=ctx.tenant_id,
                 kind="test_check",
-                subject="True Gauge — SMTP check",
+                subject="TrueGage — SMTP check",
                 to_email=member.email,
                 to_name=member.name or "",
                 status="failed",
@@ -805,13 +805,13 @@ def send_overdue_alert(
     if not members:
         raise HTTPException(status_code=400, detail="Select at least one team member")
 
-    # Non-admins may only email organization members (not True Gauge staff contacts)
+    # Non-admins may only email organization members (not TrueGage staff contacts)
     if not is_org_admin_role(ctx.user.role):
         blocked = [m for m in members if not m.org_member]
         if blocked:
             raise HTTPException(
                 status_code=403,
-                detail="You can only send to organization members. Ask an admin to email True Gauge team contacts.",
+                detail="You can only send to organization members. Ask an admin to email TrueGage team contacts.",
             )
         members = [m for m in members if m.org_member]
         if not members:
@@ -827,7 +827,7 @@ def send_overdue_alert(
     results: list[EmailTestRecipientResult] = []
     sent = 0
     failed = 0
-    subject = f"True Gauge — {len(items)} calibration{'s' if len(items) != 1 else ''} overdue"
+    subject = f"TrueGage — {len(items)} calibration{'s' if len(items) != 1 else ''} overdue"
     for member in members:
         try:
             send_overdue_alert_email(

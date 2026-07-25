@@ -64,7 +64,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { PageState } from "@/components/tg/page-state";
 
 export const Route = createFileRoute("/settings")({
-  head: () => ({ meta: [{ title: "Settings · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Settings · TrueGage" }] }),
   component: SettingsPage,
 });
 
@@ -494,7 +494,7 @@ function LoginAccountsPanel() {
     return (
       <SettingsBlock
         title="Login accounts"
-        description="Only admins can create and manage who can sign in to True Gauge."
+        description="Only admins can create and manage who can sign in to TrueGage."
       >
         <PageState
           variant="empty"
@@ -509,7 +509,7 @@ function LoginAccountsPanel() {
   return (
     <SettingsBlock
       title="Login accounts"
-      description="Create people who can sign in to True Gauge. Separate from Team & Notifications (email-only recipients)."
+      description="Create people who can sign in to TrueGage. Separate from Team & Notifications (email-only recipients)."
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
@@ -834,7 +834,7 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
   return (
     <SettingsBlock
       title="Team notification recipients"
-      description="People who can receive calibration emails. Mark Org member for your company contacts; leave it off for True Gauge staff or other external support emails."
+      description="People who can receive calibration emails. Mark Org member for your company contacts; leave it off for TrueGage staff or other external support emails."
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
@@ -888,7 +888,7 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
             <div>
               <div className="text-sm font-medium text-foreground">Organization member</div>
               <div className="text-xs text-muted-foreground">
-                On = your company. Off = True Gauge / external support (admins only when sending from
+                On = your company. Off = TrueGage / external support (admins only when sending from
                 Notifications).
               </div>
             </div>
@@ -952,7 +952,7 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
                           : "bg-muted text-muted-foreground",
                       )}
                     >
-                      {m.org_member !== false ? "Org" : "True Gauge / external"}
+                      {m.org_member !== false ? "Org" : "TrueGage / external"}
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
@@ -1017,7 +1017,7 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
               <div>
                 <div className="text-sm font-medium">Organization member</div>
                 <div className="text-xs text-muted-foreground">
-                  Off = True Gauge / external contact (hidden from normal users when sending alerts)
+                  Off = TrueGage / external contact (hidden from normal users when sending alerts)
                 </div>
               </div>
               <Switch checked={editOrgMember} onCheckedChange={setEditOrgMember} />
@@ -1060,7 +1060,7 @@ function EmailDeliveryPanel({
   const [password, setPassword] = useState("");
   const [useTls, setUseTls] = useState(true);
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState("True Gauge");
+  const [fromName, setFromName] = useState("TrueGage");
 
   const refresh = async () => {
     try {
@@ -1071,7 +1071,7 @@ function EmailDeliveryPanel({
       setUsername(s.smtp_username ?? "");
       setUseTls(s.smtp_use_tls);
       setFromEmail(s.smtp_from_email ?? "");
-      setFromName(s.smtp_from_name ?? "True Gauge");
+      setFromName(s.smtp_from_name ?? "TrueGage");
       setPassword("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not load email settings");
@@ -1103,7 +1103,7 @@ function EmailDeliveryPanel({
         smtp_password: password.trim() || undefined,
         smtp_use_tls: useTls,
         smtp_from_email: fromEmail.trim(),
-        smtp_from_name: fromName.trim() || "True Gauge",
+        smtp_from_name: fromName.trim() || "TrueGage",
       });
       setStatus(saved);
       setPassword("");
@@ -1146,7 +1146,7 @@ function EmailDeliveryPanel({
                   id="smtp-from-name"
                   value={fromName}
                   onChange={(e) => setFromName(e.target.value)}
-                  placeholder="True Gauge"
+                  placeholder="TrueGage"
                 />
               </Field>
               <Field label="From email" htmlFor="smtp-from-email">
@@ -1470,7 +1470,7 @@ function OdooIntegrationPanel() {
       <div>
         <h2 className="font-display text-base font-semibold text-foreground">ERP Integrations</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          Optional: import equipment from Odoo Online into True Gauge. True Gauge stays the app of
+          Optional: import equipment from Odoo Online into TrueGage. TrueGage stays the app of
           record for edits — nothing is written back to Odoo.
         </p>
       </div>
@@ -1519,7 +1519,7 @@ function OdooIntegrationPanel() {
 
       <SettingsBlock
         title="Odoo credentials"
-        description="Optional. Stored encrypted on the server. Import adds new equipment only — existing True Gauge records are never overwritten or deleted."
+        description="Optional. Stored encrypted on the server. Import adds new equipment only — existing TrueGage records are never overwritten or deleted."
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">

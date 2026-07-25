@@ -197,7 +197,7 @@ class NotificationRecipient(Base):
     name: Mapped[str] = mapped_column(String(255), default="")
     role: Mapped[str] = mapped_column(String(64), default="member", server_default="member")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    # True = customer/org recipient; False = True Gauge staff or external support contacts
+    # True = customer/org recipient; False = TrueGage staff or external support contacts
     org_member: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

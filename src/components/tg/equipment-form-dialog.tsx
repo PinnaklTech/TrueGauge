@@ -116,8 +116,8 @@ export function EquipmentFormDialog({
           <DialogTitle>{mode === "create" ? "New equipment" : "Edit equipment"}</DialogTitle>
           <DialogDescription>
             {mode === "create"
-              ? "Add equipment directly in True Gauge. Odoo import is optional."
-              : "Changes are saved in True Gauge only — they are not written back to Odoo."}
+              ? "Add equipment directly in TrueGage. Odoo import is optional."
+              : "Changes are saved in TrueGage only — they are not written back to Odoo."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">

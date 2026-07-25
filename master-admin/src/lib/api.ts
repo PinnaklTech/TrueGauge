@@ -89,7 +89,7 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   });
   if (session.user.role !== "platform_admin") {
-    throw new ApiError("Master Admin is for True Gauge platform admins only", 403);
+    throw new ApiError("Master Admin is for TrueGage platform admins only", 403);
   }
   return session;
 }

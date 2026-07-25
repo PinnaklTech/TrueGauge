@@ -19,7 +19,7 @@ export function Shell() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-kicker">True Gauge</div>
+          <div className="brand-kicker">TrueGage</div>
           <div className="brand-title">Master Admin</div>
         </div>
         <nav className="nav">

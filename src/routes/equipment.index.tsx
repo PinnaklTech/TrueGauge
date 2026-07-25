@@ -30,7 +30,7 @@ type EquipmentSearch = {
 const STATUS_VALUES = new Set<string>(Object.keys(statusLabel));
 
 export const Route = createFileRoute("/equipment/")({
-  head: () => ({ meta: [{ title: "Equipment · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Equipment · TrueGage" }] }),
   validateSearch: (search: Record<string, unknown>): EquipmentSearch => {
     const result: EquipmentSearch = {};
     const openCreate =

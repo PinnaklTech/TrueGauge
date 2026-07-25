@@ -26,7 +26,7 @@ function parseDate(value: string) {
 }
 
 export const Route = createFileRoute("/equipment/$id")({
-  head: () => ({ meta: [{ title: "Equipment · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Equipment · TrueGage" }] }),
   loader: async ({ params }) => {
     try {
       const [item, cal] = await Promise.all([

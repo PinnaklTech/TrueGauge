@@ -30,9 +30,9 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={(e) => void onSubmit(e)}>
-        <div className="brand-kicker">True Gauge · Internal</div>
+        <div className="brand-kicker">TrueGage · Internal</div>
         <h1>Master Admin</h1>
-        <p>Platform control center for True Gauge staff. Customer workspaces use the main app.</p>
+        <p>Platform control center for TrueGage staff. Customer workspaces use the main app.</p>
         {error && <p className="error">{error}</p>}
         <div className="field">
           <label htmlFor="email">Work email</label>

@@ -88,7 +88,7 @@ export function userInitials(profile: UserProfile) {
 
 export function roleDisplayLabel(role: string) {
   const map: Record<string, string> = {
-    platform_admin: "True Gauge Admin",
+    platform_admin: "TrueGage Admin",
     admin: "Admin",
     qa: "QA",
     technician: "Technician",

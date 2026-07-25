@@ -10,7 +10,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/certificates")({
-  head: () => ({ meta: [{ title: "Certificates · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Certificates · TrueGage" }] }),
   component: CertificatesPage,
 });
 
@@ -51,7 +51,7 @@ function CertificatesPage() {
             <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
             <p className="mt-3 text-sm font-medium text-foreground">No certificates available</p>
             <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-              True Gauge does not have a certificates API yet, so this vault is empty. When document
+              TrueGage does not have a certificates API yet, so this vault is empty. When document
               storage is added, uploaded PDFs linked to equipment will appear here.
               {q ? " Search is disabled until certificates exist." : ""}
             </p>

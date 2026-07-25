@@ -235,7 +235,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)) -> AuthTokenOut:
     """Public registration is disabled — accounts are invite / admin-created only."""
     raise HTTPException(
         status_code=403,
-        detail="True Gauge is invite only. Ask your organization admin to create your login.",
+        detail="TrueGage is invite only. Ask your organization admin to create your login.",
     )
 
 

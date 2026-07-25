@@ -88,7 +88,7 @@ def require_admin(ctx: TenantContext = Depends(get_tenant_context)) -> TenantCon
 
 def require_platform_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != PLATFORM_ADMIN:
-        raise HTTPException(status_code=403, detail="True Gauge platform admin access required")
+        raise HTTPException(status_code=403, detail="TrueGage platform admin access required")
     return user
 
 

@@ -79,7 +79,7 @@ def upgrade() -> None:
     op.execute("UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL")
     op.create_foreign_key("fk_users_tenant_id", "users", "tenants", ["tenant_id"], ["id"], ondelete="SET NULL")
     op.create_index("ix_users_tenant_id", "users", ["tenant_id"])
-    # Promote True Gauge admin to platform_admin with membership
+    # Promote TrueGage admin to platform_admin with membership
     op.execute(
         """
         UPDATE users

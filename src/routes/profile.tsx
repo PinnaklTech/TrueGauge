@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { Info, Shield } from "lucide-react";
 
 export const Route = createFileRoute("/profile")({
-  head: () => ({ meta: [{ title: "Profile · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Profile · TrueGage" }] }),
   component: ProfilePage,
 });
 
@@ -98,7 +98,7 @@ function ProfilePage() {
             My Profile
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Account details are stored in the True Gauge database and used across the workspace.
+            Account details are stored in the TrueGage database and used across the workspace.
           </p>
         </div>
         <Button onClick={() => void onSave()} disabled={saving}>

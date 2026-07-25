@@ -14,7 +14,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { statusLabel, type CalStatus, type Equipment } from "@/lib/mock-data";
-import { listEquipment } from "@/lib/api";
+import { listEquipment, getMe } from "@/lib/api";
 import {
   complianceScore,
   daysUntilDue,
@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 import { useMemo, useState, type CSSProperties } from "react";
 
 export const Route = createFileRoute("/")({
-  head: () => ({ meta: [{ title: "Control Center · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Control Center · TrueGage" }] }),
   component: Dashboard,
 });
 
@@ -54,6 +54,12 @@ function Dashboard() {
     queryKey: ["equipment"],
     queryFn: () => listEquipment(),
   });
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
+  const welcomeName = me?.full_name?.trim() || me?.email?.split("@")[0] || null;
   const equipment = data?.items ?? [];
   const readiness = complianceScore(equipment);
   const breakdown = statusBreakdown(equipment);
@@ -101,9 +107,14 @@ function Dashboard() {
     <AppShell breadcrumbs={[{ label: "Control Center" }]} hidePageHeader>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
+          {welcomeName && (
+            <p className="mb-1.5 text-base font-medium text-primary md:text-lg">
+              Welcome back, {welcomeName}
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-              True Gauge Control Center
+              TrueGage Control Center
             </h1>
             <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               Live Compliance: {readiness}%

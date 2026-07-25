@@ -40,7 +40,7 @@ import {
 } from "recharts";
 
 export const Route = createFileRoute("/reports")({
-  head: () => ({ meta: [{ title: "Reports · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Reports · TrueGage" }] }),
   component: ReportsPage,
 });
 
@@ -153,7 +153,7 @@ function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `true-gauge-${reportType}.csv`;
+    a.download = `TrueGage-${reportType}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success(`CSV downloaded (${rows.length} rows)`);
@@ -203,7 +203,7 @@ function ReportsPage() {
           </h2>
           {equipment.length === 0 ? (
             <EmptyNote>
-              No equipment in True Gauge yet. Readiness is calculated from calibrated vs active assets
+              No equipment in TrueGage yet. Readiness is calculated from calibrated vs active assets
               once you add equipment or import from Odoo.
             </EmptyNote>
           ) : (
@@ -268,7 +268,7 @@ function ReportsPage() {
                   <div className="font-medium text-foreground">Certificate / NIST traceability</div>
                   <div className="text-xs">
                     Not available yet — certificate storage API is not connected. This check will
-                    appear when certificates are stored in True Gauge.
+                    appear when certificates are stored in TrueGage.
                   </div>
                 </div>
               </li>

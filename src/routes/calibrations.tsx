@@ -24,7 +24,7 @@ import { toast } from "sonner";
 type CalTab = "schedules" | "history" | "log";
 
 export const Route = createFileRoute("/calibrations")({
-  head: () => ({ meta: [{ title: "Calibrations · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Calibrations · TrueGage" }] }),
   validateSearch: (search: Record<string, unknown>): { tab?: CalTab; equipment?: string } => {
     const tab = search.tab;
     const equipment = typeof search.equipment === "string" ? search.equipment : undefined;

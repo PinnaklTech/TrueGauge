@@ -1,4 +1,4 @@
-"""Outbound SMTP helpers for True Gauge notification emails."""
+"""Outbound SMTP helpers for TrueGage notification emails."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def load_smtp_config(row: AppSettings) -> SmtpConfig:
         password=password,
         use_tls=bool(row.smtp_use_tls),
         from_email=row.smtp_from_email.strip(),
-        from_name=(row.smtp_from_name or "True Gauge").strip() or "True Gauge",
+        from_name=(row.smtp_from_name or "TrueGage").strip() or "TrueGage",
     )
 
 
@@ -134,7 +134,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
     name = to_name.strip() or "there"
     safe_name = _escape(name)
     safe_from = _escape(config.from_email)
-    subject = "True Gauge delivery check — you’re connected"
+    subject = "TrueGage delivery check — you’re connected"
 
     # Match web app stacks from styles.css / __root.tsx
     font_sans = FONT_SANS
@@ -143,12 +143,12 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
 
     text = (
         f"Hi {name},\n\n"
-        "Your True Gauge email delivery check succeeded.\n\n"
+        "Your TrueGage email delivery check succeeded.\n\n"
         "This temporary message confirms that SMTP is configured correctly and "
         "calibration alerts can reach your team inbox.\n\n"
         f"Sent via: {config.from_email}\n"
         "You can close this message — no action is required.\n\n"
-        "— True Gauge Metrology\n"
+        "— TrueGage Metrology\n"
     )
 
     html = f"""\
@@ -157,7 +157,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>True Gauge delivery check</title>
+  <title>TrueGage delivery check</title>
 {FONT_LINKS}
   <!--[if mso]>
   <style type="text/css">
@@ -173,7 +173,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px 28px 22px;">
               <div style="font-family:{font_sans};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                True Gauge · Metrology Control
+                TrueGage · Metrology Control
               </div>
               <div style="font-family:{font_display};font-size:26px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;letter-spacing:-0.02em;">
                 Delivery check passed
@@ -189,7 +189,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
                 Hi {safe_name},
               </p>
               <p style="margin:0 0 14px;font-family:{font_sans};font-size:15px;line-height:1.6;font-weight:400;color:#cbd5e1;">
-                This is a temporary check from <strong style="font-weight:600;color:#f8fafc;">True Gauge</strong>.
+                This is a temporary check from <strong style="font-weight:600;color:#f8fafc;">TrueGage</strong>.
                 Receiving it means calibration reminder emails can reach your team from this system.
               </p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#0b1220;border:1px solid #243044;border-radius:10px;">
@@ -209,14 +209,14 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
               </table>
               <p style="margin:0;font-family:{font_sans};font-size:13px;line-height:1.55;font-weight:400;color:#94a3b8;">
                 No action needed — you can archive this message. Alarm rules and team recipients
-                are managed in True Gauge Settings.
+                are managed in TrueGage Settings.
               </p>
             </td>
           </tr>
           <tr>
             <td style="border-top:1px solid #1f2a3c;padding:16px 28px 22px;background:#0d1422;">
               <div style="font-family:{font_sans};font-size:12px;font-weight:500;color:#64748b;">
-                True Gauge · Manufacturing calibration monitoring
+                TrueGage · Manufacturing calibration monitoring
               </div>
             </td>
           </tr>
@@ -253,7 +253,7 @@ def send_overdue_alert_email(
     safe_name = _escape(name)
     safe_cta = _escape(cta_url)
     count = len(items)
-    subject = f"True Gauge — {count} calibration{'s' if count != 1 else ''} overdue"
+    subject = f"TrueGage — {count} calibration{'s' if count != 1 else ''} overdue"
 
     lines = [
         f"Hi {name},",
@@ -270,7 +270,7 @@ def send_overdue_alert_email(
             "",
             f"View overdue equipment: {cta_url}",
             "",
-            "— True Gauge Metrology",
+            "— TrueGage Metrology",
         ]
     )
     text = "\n".join(lines)
@@ -311,7 +311,7 @@ def send_overdue_alert_email(
           <tr>
             <td style="background:linear-gradient(135deg,#b91c1c 0%,#7f1d1d 55%,#450a0a 100%);padding:28px;">
               <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                True Gauge · Urgent compliance
+                TrueGage · Urgent compliance
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:24px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;letter-spacing:-0.02em;">
                 {count} calibration{'s' if count != 1 else ''} overdue
@@ -352,7 +352,7 @@ def send_overdue_alert_email(
           <tr>
             <td style="border-top:1px solid #1f2a3c;padding:16px 28px 22px;background:#0d1422;">
               <div style="font-family:{FONT_SANS};font-size:12px;font-weight:500;color:#64748b;">
-                True Gauge · Manufacturing calibration monitoring
+                TrueGage · Manufacturing calibration monitoring
               </div>
             </td>
           </tr>

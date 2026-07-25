@@ -33,7 +33,7 @@ import { Mail, Send } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/notifications")({
-  head: () => ({ meta: [{ title: "Notifications · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Notifications · TrueGage" }] }),
   component: NotificationsPage,
 });
 
@@ -446,7 +446,7 @@ function SendOverdueEmailDialog({
                     <span className="font-medium text-foreground">{m.name || m.email}</span>
                     {isAdmin && m.org_member === false && (
                       <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
-                        True Gauge / external
+                        TrueGage / external
                       </span>
                     )}
                   </div>

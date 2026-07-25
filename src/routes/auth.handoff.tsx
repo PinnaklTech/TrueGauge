@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { setToken } from "@/lib/auth";
 
 export const Route = createFileRoute("/auth/handoff")({
-  head: () => ({ meta: [{ title: "Opening workspace · True Gauge" }] }),
+  head: () => ({ meta: [{ title: "Opening workspace · TrueGage" }] }),
   component: HandoffPage,
 });
 

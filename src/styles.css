@@ -356,3 +356,45 @@
   }
 }
 
+/* Login form panel: keep light readable colors even when html.dark is set */
+.tg-login-form {
+  color-scheme: light;
+  --foreground: oklch(0.18 0.02 255);
+  --muted-foreground: oklch(0.5 0.015 180);
+  --primary: #0f766e;
+  --primary-foreground: #f8fafc;
+  --accent: rgba(13, 148, 136, 0.08);
+  --accent-foreground: #0f766e;
+  --border: oklch(0.92 0.005 180);
+  --input: oklch(0.92 0.005 180);
+  --ring: #0f766e;
+}
+
+/* Full-screen login brand panel */
+.tg-login-atmosphere {
+  background:
+    radial-gradient(ellipse 90% 70% at 20% 15%, rgba(45, 212, 191, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 55% at 85% 80%, rgba(15, 118, 110, 0.55), transparent 50%),
+    linear-gradient(155deg, #0f766e 0%, #0d5c56 38%, #0a3d3a 72%, #072a28 100%);
+}
+
+@keyframes tg-login-orb {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translate(12px, -18px) scale(1.06);
+  }
+}
+
+.tg-login-orb {
+  animation: tg-login-orb 9s ease-in-out infinite;
+}
+
+.tg-login-orb-delayed {
+  animation: tg-login-orb 11s ease-in-out 1.4s infinite;
+}
+

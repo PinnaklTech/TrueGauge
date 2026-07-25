@@ -153,8 +153,11 @@ export function AppShell({
 
   if (!authReady) {
     return (
-      <div className="grid min-h-screen place-items-center bg-background text-sm text-muted-foreground">
-        Checking session…
+      <div className="grid min-h-screen place-items-center bg-background" role="status" aria-live="polite">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        </div>
       </div>
     );
   }
@@ -457,7 +460,7 @@ export function AppShell({
 
           <nav className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
             <Link to="/" className="tg-focus-ring rounded-sm font-medium text-foreground hover:text-primary">
-              True Gauge
+              TrueGage
             </Link>
             {crumbTrail.map((b, i) => (
               <span key={`${b.label}-${i}`} className="flex items-center gap-1.5">

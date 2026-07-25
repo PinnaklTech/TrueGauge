@@ -8,7 +8,7 @@ from app.config import get_settings
 settings = get_settings()
 
 app = FastAPI(
-    title="True Gauge API",
+    title="TrueGage API",
     description="Calibration notification platform — Odoo integration & equipment cache",
     version="0.1.0",
 )
@@ -30,4 +30,4 @@ app.include_router(accounts_router, prefix="/api")
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"name": "True Gauge API", "docs": "/docs"}
+    return {"name": "TrueGage API", "docs": "/docs"}
