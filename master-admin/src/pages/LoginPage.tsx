@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { login } from "@/lib/api";
-import { isAuthenticated, setToken } from "@/lib/auth";
+import { isAuthenticated, setSessionTokens } from "@/lib/auth";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ export function LoginPage() {
     setError("");
     try {
       const session = await login(email.trim(), password);
-      setToken(session.access_token);
+      setSessionTokens(session.access_token, session.refresh_token);
       void navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");

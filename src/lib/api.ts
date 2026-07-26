@@ -1,5 +1,5 @@
 import type { CalStatus, Equipment } from "@/lib/mock-data";
-import { clearToken, getToken } from "@/lib/auth";
+import { clearToken, getRefreshToken, getToken, setSessionTokens } from "@/lib/auth";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8000";
 
@@ -11,7 +11,34 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+        if (!res.ok) return false;
+        const session = (await res.json()) as AuthSession;
+        setSessionTokens(session.access_token, session.refresh_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   const token = typeof window !== "undefined" ? getToken() : null;
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -22,6 +49,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      !retried &&
+      typeof window !== "undefined" &&
+      !path.startsWith("/api/auth/login") &&
+      !path.startsWith("/api/auth/register") &&
+      !path.startsWith("/api/auth/refresh") &&
+      !path.startsWith("/api/auth/handoff")
+    ) {
+      const ok = await tryRefresh();
+      if (ok) return request<T>(path, init, true);
+      clearToken();
+      if (!window.location.pathname.startsWith("/auth")) {
+        window.location.href = "/auth/login";
+      }
+    }
     let detail = res.statusText;
     try {
       const body = (await res.json()) as { detail?: string | { msg?: string }[] };
@@ -29,12 +72,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       else if (Array.isArray(body.detail)) detail = body.detail.map((d) => d.msg ?? JSON.stringify(d)).join(", ");
     } catch {
       /* ignore */
-    }
-    if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/api/auth/login") && !path.startsWith("/api/auth/register")) {
-      clearToken();
-      if (!window.location.pathname.startsWith("/auth")) {
-        window.location.href = "/auth/login";
-      }
     }
     throw new ApiError(detail || `Request failed (${res.status})`, res.status);
   }
@@ -432,7 +469,9 @@ export interface AuthUser {
 
 export interface AuthSession {
   access_token: string;
+  refresh_token?: string | null;
   token_type: string;
+  expires_in?: number;
   user: AuthUser;
   tenant_id: number;
   tenant_name: string;
@@ -480,13 +519,29 @@ export interface EmailAuditItem {
 }
 
 export async function getAuthStatus() {
-  return request<{ has_users: boolean; user_count: number }>("/api/auth/status");
+  return request<{ has_users: boolean }>("/api/auth/status");
 }
 
 export async function login(email: string, password: string) {
   return request<AuthSession>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function logout() {
+  try {
+    await request<void>("/api/auth/logout", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  clearToken();
+}
+
+export async function exchangeHandoffCode(code: string) {
+  return request<AuthSession>("/api/auth/handoff/exchange", {
+    method: "POST",
+    body: JSON.stringify({ code }),
   });
 }
 
@@ -533,12 +588,12 @@ export async function updateMe(payload: Partial<{
   job_title: string;
   department: string;
   phone: string;
-  role: UserRole;
   timezone: string;
   locale: string;
   notify_email: boolean;
   notify_in_app: boolean;
   password: string;
+  current_password: string;
 }>) {
   return request<AuthUser>("/api/auth/me", {
     method: "PATCH",

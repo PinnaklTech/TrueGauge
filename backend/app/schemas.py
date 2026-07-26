@@ -277,7 +277,7 @@ class UserListOut(BaseModel):
 
 class AdminUserCreateIn(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(..., min_length=12, max_length=128)
     full_name: str = Field("", max_length=255)
     role: OrgUserRole = "member"
     job_title: str = Field("", max_length=255)
@@ -291,7 +291,7 @@ class AdminUserUpdateIn(BaseModel):
     job_title: Optional[str] = Field(None, max_length=255)
     department: Optional[str] = Field(None, max_length=255)
     active: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=8, max_length=128)
+    password: Optional[str] = Field(None, min_length=12, max_length=128)
 
 
 class MeOut(UserOut):
@@ -301,15 +301,30 @@ class MeOut(UserOut):
 
 class AuthTokenOut(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
+    expires_in: int = 3600
     user: UserOut
     tenant_id: int
     tenant_name: str = ""
 
 
+class RefreshIn(BaseModel):
+    refresh_token: str = Field(..., min_length=20)
+
+
+class HandoffCreateOut(BaseModel):
+    code: str
+    expires_in: int
+
+
+class HandoffExchangeIn(BaseModel):
+    code: str = Field(..., min_length=10, max_length=128)
+
+
 class RegisterIn(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(..., min_length=12, max_length=128)
     full_name: str = Field("", max_length=255)
     company_name: str = Field("", max_length=255)
 
@@ -331,7 +346,8 @@ class UserUpdateIn(BaseModel):
     locale: Optional[str] = Field(None, max_length=32)
     notify_email: Optional[bool] = None
     notify_in_app: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=8, max_length=128)
+    password: Optional[str] = Field(None, min_length=12, max_length=128)
+    current_password: Optional[str] = Field(None, min_length=1, max_length=128)
 
 
 class TenantOut(BaseModel):
@@ -362,7 +378,7 @@ class TenantCreateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     slug: Optional[str] = Field(None, max_length=64)
     admin_email: Optional[str] = Field(None, max_length=255)
-    admin_password: Optional[str] = Field(None, min_length=8, max_length=128)
+    admin_password: Optional[str] = Field(None, min_length=12, max_length=128)
     admin_full_name: Optional[str] = Field(None, max_length=255)
 
 

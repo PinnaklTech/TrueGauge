@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { APP_URL, getTenant, switchTenant, updateTenant } from "@/lib/api";
+import { APP_URL, createHandoffCode, getTenant, updateTenant } from "@/lib/api";
 
 export function CompanyDetailPage() {
   const { id } = useParams();
@@ -34,8 +34,8 @@ export function CompanyDetailPage() {
     setOpening(true);
     setMsg("");
     try {
-      const session = await switchTenant(tenantId);
-      const url = `${APP_URL}/auth/handoff#token=${encodeURIComponent(session.access_token)}`;
+      const handoff = await createHandoffCode(tenantId);
+      const url = `${APP_URL}/auth/handoff?code=${encodeURIComponent(handoff.code)}`;
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       setMsg(err instanceof Error ? err.message : "Could not open company");

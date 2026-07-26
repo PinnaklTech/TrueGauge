@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.accounts import get_or_create_settings, log_email_send, notify_email_batch
 from app.config import get_settings
 from app.database import get_db
-from app.deps import TenantContext, get_tenant_context, is_org_admin_role, require_admin
+from app.deps import TenantContext, get_tenant_context, is_org_admin_role, require_admin, require_writer
 from app.models import (
     CalibrationRecord,
     EquipmentCache,
@@ -16,6 +16,8 @@ from app.models import (
     new_calibration_id,
     new_public_id,
 )
+from app.security import client_safe_error, decrypt_secret, encrypt_secret
+from app.ssrf import validate_public_https_url, validate_smtp_host
 from app.schemas import (
     CalibrationCreate,
     CalibrationListOut,
@@ -41,7 +43,6 @@ from app.schemas import (
     TeamMemberOut,
     TeamMemberUpdate,
 )
-from app.security import decrypt_secret, encrypt_secret
 from app.services.email_service import (
     EmailError,
     OverdueEquipmentRow,
@@ -129,7 +130,7 @@ def health(db: Session = Depends(get_db)) -> HealthOut:
 @router.get("/odoo/status", response_model=OdooConnectionStatus)
 def odoo_status(
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_admin),
 ) -> OdooConnectionStatus:
     row = get_or_create_settings(db, ctx.tenant_id)
     count = db.query(EquipmentCache).filter(EquipmentCache.tenant_id == ctx.tenant_id).count()
@@ -155,8 +156,9 @@ def save_odoo_credentials(
     db: Session = Depends(get_db),
     ctx: TenantContext = Depends(require_admin),
 ) -> OdooConnectionStatus:
+    safe_url = validate_public_https_url(body.odoo_url, field_name="Odoo URL")
     row = get_or_create_settings(db, ctx.tenant_id)
-    row.odoo_url = body.odoo_url.rstrip("/")
+    row.odoo_url = safe_url
     row.odoo_database = body.odoo_database
     row.odoo_username = body.odoo_username
     row.odoo_api_key_encrypted = encrypt_secret(body.odoo_api_key)
@@ -177,6 +179,7 @@ def test_odoo_connection(
     row = get_or_create_settings(db, ctx.tenant_id)
     if not (row.odoo_url and row.odoo_database and row.odoo_username and row.odoo_api_key_encrypted):
         raise HTTPException(status_code=400, detail="Odoo credentials are not configured")
+    validate_public_https_url(row.odoo_url, field_name="Odoo URL")
     try:
         client = OdooClient(
             url=row.odoo_url,
@@ -193,14 +196,16 @@ def test_odoo_connection(
         return OdooTestResult(ok=True, uid=uid, version=str(ver), message="Connected to Odoo successfully")
     except OdooError as exc:
         row.odoo_connected = False
-        row.odoo_last_error = str(exc)
+        msg = client_safe_error(exc, fallback="Could not connect to Odoo")
+        row.odoo_last_error = msg
         db.commit()
-        return OdooTestResult(ok=False, message=str(exc))
+        return OdooTestResult(ok=False, message=msg)
     except Exception as exc:
         row.odoo_connected = False
-        row.odoo_last_error = str(exc)
+        msg = client_safe_error(exc, fallback="Connection failed")
+        row.odoo_last_error = msg
         db.commit()
-        return OdooTestResult(ok=False, message=f"Connection failed: {exc}")
+        return OdooTestResult(ok=False, message=msg)
 
 
 @router.post("/odoo/sync", response_model=SyncResult)
@@ -209,6 +214,8 @@ def sync_odoo_equipment(
     ctx: TenantContext = Depends(require_admin),
 ) -> SyncResult:
     row = get_or_create_settings(db, ctx.tenant_id)
+    if row.odoo_url:
+        validate_public_https_url(row.odoo_url, field_name="Odoo URL")
     try:
         result = sync_equipment_from_odoo(db, row)
         return SyncResult(
@@ -224,13 +231,15 @@ def sync_odoo_equipment(
         )
     except OdooError as exc:
         row.odoo_connected = False
-        row.odoo_last_error = str(exc)
+        msg = client_safe_error(exc, fallback="Odoo import failed")
+        row.odoo_last_error = msg
         db.commit()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
     except Exception as exc:
-        row.odoo_last_error = str(exc)
+        msg = client_safe_error(exc, fallback="Import failed")
+        row.odoo_last_error = msg
         db.commit()
-        raise HTTPException(status_code=500, detail=f"Import failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=msg) from exc
 
 
 @router.get("/equipment", response_model=EquipmentListOut)
@@ -262,7 +271,7 @@ def list_equipment(
 def create_equipment(
     body: EquipmentCreate,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_writer),
 ) -> EquipmentOut:
     last_cal = _parse_optional_date(body.last_calibration)
     next_cal = _parse_optional_date(body.next_calibration)
@@ -314,7 +323,7 @@ def update_equipment(
     equipment_id: str,
     body: EquipmentUpdate,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_writer),
 ) -> EquipmentOut:
     row = find_equipment(db, equipment_id, ctx.tenant_id)
     data = body.model_dump(exclude_unset=True)
@@ -344,7 +353,7 @@ def update_equipment(
 def delete_equipment(
     equipment_id: str,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_admin),
 ) -> Response:
     row = find_equipment(db, equipment_id, ctx.tenant_id)
     db.delete(row)
@@ -420,7 +429,7 @@ def list_equipment_calibrations(
 def create_calibration(
     body: CalibrationCreate,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_writer),
 ) -> CalibrationOut:
     eq = find_equipment(db, body.equipment_id, ctx.tenant_id)
     performed = _parse_optional_date(body.date)
@@ -475,7 +484,7 @@ def get_calibration(
 def delete_calibration(
     calibration_id: str,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_admin),
 ) -> Response:
     row = find_calibration(db, calibration_id, ctx.tenant_id)
     db.delete(row)
@@ -619,7 +628,7 @@ def _email_settings_out(row) -> EmailSettingsOut:
 @router.get("/email/settings", response_model=EmailSettingsOut)
 def get_email_settings(
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_admin),
 ) -> EmailSettingsOut:
     return _email_settings_out(get_or_create_settings(db, ctx.tenant_id))
 
@@ -635,10 +644,10 @@ def save_email_settings(
     if "@" not in from_email or "." not in from_email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid From email address")
 
-    row.smtp_host = body.smtp_host.strip()
+    row.smtp_host = validate_smtp_host(body.smtp_host)
     row.smtp_port = body.smtp_port
     row.smtp_username = (body.smtp_username or "").strip() or None
-    row.smtp_use_tls = body.smtp_use_tls
+    row.smtp_use_tls = True if get_settings().is_production else bool(body.smtp_use_tls)
     row.smtp_from_email = from_email
     row.smtp_from_name = (body.smtp_from_name or "TrueGage").strip() or "TrueGage"
     if body.smtp_password and body.smtp_password.strip():
@@ -781,7 +790,7 @@ def _overdue_equipment_rows(db: Session, tenant_id: int) -> list[OverdueEquipmen
 def send_overdue_alert(
     body: OverdueAlertSendIn,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(get_tenant_context),
+    ctx: TenantContext = Depends(require_admin),
 ) -> OverdueAlertSendOut:
     settings_row = get_or_create_settings(db, ctx.tenant_id)
     if not smtp_configured(settings_row):

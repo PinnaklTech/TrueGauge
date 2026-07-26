@@ -67,6 +67,10 @@ function fixTsdSourceHydration(): Plugin {
 }
 
 export default defineConfig({
+  // Hostinger / VPS: emit a Node server instead of Cloudflare Workers
+  nitro: {
+    preset: "node-server",
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

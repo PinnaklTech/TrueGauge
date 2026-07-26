@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.deps import (
     PLATFORM_ADMIN,
@@ -25,10 +27,13 @@ from app.models import (
     AppSettings,
     EmailAuditLog,
     EquipmentCache,
+    HandoffCode,
+    RefreshToken,
     Tenant,
     TenantMembership,
     User,
 )
+from app.rate_limit import login_limiter
 from app.schemas import (
     AdminUserCreateIn,
     AdminUserUpdateIn,
@@ -37,11 +42,14 @@ from app.schemas import (
     AuthTokenOut,
     EmailAuditListOut,
     EmailAuditOut,
+    HandoffCreateOut,
+    HandoffExchangeIn,
     LoginIn,
     MeOut,
     OrgProfileIn,
     OrgProfileOut,
     PlatformOverviewOut,
+    RefreshIn,
     RegisterIn,
     TenantCreateIn,
     TenantDetailOut,
@@ -52,10 +60,19 @@ from app.schemas import (
     UserOut,
     UserUpdateIn,
 )
-from app.security import create_access_token, hash_password, verify_password
+from app.security import (
+    create_access_token,
+    hash_opaque_token,
+    hash_password,
+    needs_rehash,
+    new_opaque_token,
+    verify_password,
+    verify_password_with_dummy,
+)
 from app.services.notifications import add_system_notification, sync_due_date_notifications
 
 router = APIRouter()
+logger = logging.getLogger("truegauge.auth")
 
 
 def get_or_create_settings(db: Session, tenant_id: int) -> AppSettings:
@@ -75,6 +92,66 @@ def _normalize_email(email: str) -> str:
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
     return (slug[:60] or "tenant")
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+def _bump_token_version(user: User) -> None:
+    user.token_version = int(getattr(user, "token_version", 0) or 0) + 1
+
+
+def _revoke_refresh_tokens(db: Session, user_id: int) -> None:
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user_id,
+        RefreshToken.revoked.is_(False),
+    ).update({"revoked": True}, synchronize_session=False)
+
+
+def _create_refresh_token(db: Session, user: User, tenant_id: int) -> str:
+    settings = get_settings()
+    raw = new_opaque_token()
+    row = RefreshToken(
+        user_id=user.id,
+        tenant_id=tenant_id,
+        token_hash=hash_opaque_token(raw),
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.refresh_token_ttl_seconds),
+        revoked=False,
+    )
+    db.add(row)
+    return raw
+
+
+def _issue_token(db: Session, user: User, tenant_id: int) -> AuthTokenOut:
+    settings = get_settings()
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None or not tenant.active:
+        raise HTTPException(status_code=400, detail="Workspace not found or inactive")
+    if not user_can_access_tenant(db, user, tenant_id):
+        raise HTTPException(status_code=403, detail="You do not have access to this workspace")
+    token = create_access_token(
+        user_id=user.id,
+        email=user.email,
+        tenant_id=tenant_id,
+        role=user.role,
+        token_version=int(getattr(user, "token_version", 0) or 0),
+    )
+    refresh = _create_refresh_token(db, user, tenant_id)
+    db.commit()
+    return AuthTokenOut(
+        access_token=token,
+        refresh_token=refresh,
+        expires_in=settings.access_token_ttl_seconds,
+        user=user_to_out(user),
+        tenant_id=tenant_id,
+        tenant_name=tenant.name,
+    )
 
 
 def user_to_out(user: User) -> UserOut:
@@ -178,26 +255,6 @@ def email_audit_to_out(row: EmailAuditLog) -> EmailAuditOut:
     )
 
 
-def _issue_token(db: Session, user: User, tenant_id: int) -> AuthTokenOut:
-    tenant = db.get(Tenant, tenant_id)
-    if tenant is None or not tenant.active:
-        raise HTTPException(status_code=400, detail="Workspace not found or inactive")
-    if not user_can_access_tenant(db, user, tenant_id):
-        raise HTTPException(status_code=403, detail="You do not have access to this workspace")
-    token = create_access_token(
-        user_id=user.id,
-        email=user.email,
-        tenant_id=tenant_id,
-        role=user.role,
-    )
-    return AuthTokenOut(
-        access_token=token,
-        user=user_to_out(user),
-        tenant_id=tenant_id,
-        tenant_name=tenant.name,
-    )
-
-
 def _resolve_login_tenant_id(db: Session, user: User, requested: int | None) -> int:
     if user.role == PLATFORM_ADMIN:
         memberships = (
@@ -226,8 +283,9 @@ def _resolve_login_tenant_id(db: Session, user: User, requested: int | None) -> 
 
 @router.get("/auth/status")
 def auth_status(db: Session = Depends(get_db)) -> dict:
+    # Do not expose user_count publicly
     count = db.query(User).count()
-    return {"has_users": count > 0, "user_count": count}
+    return {"has_users": count > 0}
 
 
 @router.post("/auth/register", response_model=AuthTokenOut, status_code=201)
@@ -240,15 +298,64 @@ def register(body: RegisterIn, db: Session = Depends(get_db)) -> AuthTokenOut:
 
 
 @router.post("/auth/login", response_model=AuthTokenOut)
-def login(body: LoginIn, db: Session = Depends(get_db)) -> AuthTokenOut:
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)) -> AuthTokenOut:
+    settings = get_settings()
+    ip = _client_ip(request)
+    if not login_limiter.hit(
+        f"login:{ip}",
+        limit=settings.login_rate_limit_per_minute,
+        window_seconds=60.0,
+    ):
+        logger.warning("auth.login_rate_limited ip=%s", ip)
+        raise HTTPException(status_code=429, detail="Too many sign-in attempts. Try again shortly.")
+
     email = _normalize_email(body.email)
     user = db.query(User).filter(User.email == email).one_or_none()
-    if user is None or not verify_password(body.password, user.password_hash):
+    ok = verify_password_with_dummy(body.password, user.password_hash if user else None)
+    if user is None or not ok:
+        logger.info("auth.login_failed ip=%s email=%s", ip, email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.active:
+        logger.info("auth.login_inactive ip=%s user_id=%s", ip, user.id)
         raise HTTPException(status_code=401, detail="This account is inactive")
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
+        db.add(user)
     tenant_id = _resolve_login_tenant_id(db, user, body.tenant_id)
+    logger.info("auth.login_ok ip=%s user_id=%s tenant_id=%s", ip, user.id, tenant_id)
     return _issue_token(db, user, tenant_id)
+
+
+@router.post("/auth/refresh", response_model=AuthTokenOut)
+def refresh_session(body: RefreshIn, db: Session = Depends(get_db)) -> AuthTokenOut:
+    token_hash = hash_opaque_token(body.refresh_token.strip())
+    row = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).one_or_none()
+    now = datetime.now(timezone.utc)
+    if (
+        row is None
+        or row.revoked
+        or row.expires_at.replace(tzinfo=timezone.utc) < now
+    ):
+        raise HTTPException(status_code=401, detail="Refresh token invalid or expired")
+    user = db.get(User, row.user_id)
+    if user is None or not user.active:
+        raise HTTPException(status_code=401, detail="Account not found or inactive")
+    # Rotate refresh token
+    row.revoked = True
+    db.add(row)
+    return _issue_token(db, user, row.tenant_id)
+
+
+@router.post("/auth/logout", status_code=204)
+def logout(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    _bump_token_version(user)
+    _revoke_refresh_tokens(db, user.id)
+    db.commit()
+    logger.info("auth.logout user_id=%s", user.id)
+    return Response(status_code=204)
 
 
 @router.get("/auth/me", response_model=MeOut)
@@ -270,13 +377,30 @@ def update_me(
     db: Session = Depends(get_db),
 ) -> UserOut:
     data = body.model_dump(exclude_unset=True)
-    # Org users cannot elevate to platform_admin via self-service
-    if "role" in data and user.role != PLATFORM_ADMIN:
+    # Org users cannot elevate to platform_admin via self-service; strip role entirely for non-platform
+    if user.role != PLATFORM_ADMIN:
         data.pop("role", None)
+    else:
+        # Platform admins also should not self-change role via profile
+        data.pop("role", None)
+
+    changing_password = bool(data.get("password"))
+    changing_email = "email" in data and data["email"] is not None
+    if changing_password or changing_email:
+        current = data.pop("current_password", None)
+        if not current or not verify_password(current, user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is required to change email or password")
+    else:
+        data.pop("current_password", None)
+
     if "password" in data:
         pw = data.pop("password")
         if pw:
+            if len(pw) < 12:
+                raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
             user.password_hash = hash_password(pw)
+            _bump_token_version(user)
+            _revoke_refresh_tokens(db, user.id)
     if "email" in data and data["email"] is not None:
         email = _normalize_email(data["email"])
         if "@" not in email:
@@ -287,7 +411,7 @@ def update_me(
         user.email = email
         data.pop("email")
     for key, value in data.items():
-        if isinstance(value, str) and key not in ("role", "timezone", "locale"):
+        if isinstance(value, str) and key not in ("timezone", "locale"):
             value = value.strip()
         setattr(user, key, value)
     user.updated_at = datetime.now(timezone.utc)
@@ -428,8 +552,8 @@ def create_tenant(
         email = _normalize_email(admin_email)
         if "@" not in email or "." not in email.split("@")[-1]:
             raise HTTPException(status_code=400, detail="Enter a valid admin email address")
-        if len(admin_password) < 8:
-            raise HTTPException(status_code=400, detail="Admin password must be at least 8 characters")
+        if len(admin_password) < 12:
+            raise HTTPException(status_code=400, detail="Admin password must be at least 12 characters")
         existing = db.query(User).filter(User.email == email).one_or_none()
         if existing is not None:
             raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -450,12 +574,61 @@ def create_tenant(
     return tenant_to_out(tenant, db)
 
 
+@router.post("/tenants/{tenant_id}/handoff", response_model=HandoffCreateOut)
+def create_handoff_code(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_platform_admin),
+) -> HandoffCreateOut:
+    """Issue a one-time short-lived code for opening a company workspace (no token in URL)."""
+    if not user_can_access_tenant(db, user, tenant_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None or not tenant.active:
+        raise HTTPException(status_code=400, detail="Workspace not found or inactive")
+    settings = get_settings()
+    raw = new_opaque_token()
+    row = HandoffCode(
+        code_hash=hash_opaque_token(raw),
+        user_id=user.id,
+        tenant_id=tenant_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.handoff_code_ttl_seconds),
+        used=False,
+    )
+    db.add(row)
+    db.commit()
+    logger.info("auth.handoff_created user_id=%s tenant_id=%s", user.id, tenant_id)
+    return HandoffCreateOut(code=raw, expires_in=settings.handoff_code_ttl_seconds)
+
+
+@router.post("/auth/handoff/exchange", response_model=AuthTokenOut)
+def exchange_handoff_code(body: HandoffExchangeIn, db: Session = Depends(get_db)) -> AuthTokenOut:
+    code = body.code.strip()
+    row = db.query(HandoffCode).filter(HandoffCode.code_hash == hash_opaque_token(code)).one_or_none()
+    now = datetime.now(timezone.utc)
+    if row is None or row.used:
+        raise HTTPException(status_code=400, detail="Invalid or already used handoff code")
+    exp = row.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < now:
+        raise HTTPException(status_code=400, detail="Handoff code expired — open the company again")
+    user = db.get(User, row.user_id)
+    if user is None or not user.active or user.role != PLATFORM_ADMIN:
+        raise HTTPException(status_code=400, detail="Invalid handoff code")
+    row.used = True
+    db.add(row)
+    logger.info("auth.handoff_exchanged user_id=%s tenant_id=%s", user.id, row.tenant_id)
+    return _issue_token(db, user, row.tenant_id)
+
+
 @router.post("/tenants/{tenant_id}/switch", response_model=AuthTokenOut)
 def switch_tenant(
     tenant_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_platform_admin),
 ) -> AuthTokenOut:
+    """Legacy switch — prefer /tenants/{id}/handoff for browser open."""
     return _issue_token(db, user, tenant_id)
 
 
@@ -482,8 +655,8 @@ def create_user(
     email = _normalize_email(body.email)
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid email address")
-    if len(body.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if len(body.password) < 12:
+        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
     existing = db.query(User).filter(User.email == email).one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -524,7 +697,11 @@ def admin_update_user(
     if "password" in data:
         pw = data.pop("password")
         if pw:
+            if len(pw) < 12:
+                raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
             row.password_hash = hash_password(pw)
+            _bump_token_version(row)
+            _revoke_refresh_tokens(db, row.id)
     if "email" in data and data["email"] is not None:
         email = _normalize_email(data["email"])
         if "@" not in email:
@@ -536,6 +713,9 @@ def admin_update_user(
         data.pop("email")
     if "active" in data and data["active"] is False and row.id == ctx.user.id:
         raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+    if "active" in data and data["active"] is False:
+        _bump_token_version(row)
+        _revoke_refresh_tokens(db, row.id)
     if "role" in data and data["role"] != "admin" and row.id == ctx.user.id and ctx.user.role == "admin":
         other_admins = (
             db.query(User)
@@ -552,6 +732,8 @@ def admin_update_user(
                 status_code=400,
                 detail="Promote another admin before changing your own role",
             )
+        _bump_token_version(row)
+        _revoke_refresh_tokens(db, row.id)
 
     for key, value in data.items():
         if isinstance(value, str) and key not in ("role",):

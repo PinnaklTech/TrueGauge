@@ -10,13 +10,20 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import TenantMembership, User
+from app.models import Tenant, TenantMembership, User
 from app.security import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
 
 PLATFORM_ADMIN = "platform_admin"
 ORG_ADMIN = "admin"
+QA = "qa"
+TECHNICIAN = "technician"
+MEMBER = "member"
+
+# Can create/update equipment and calibrations
+WRITER_ROLES = frozenset({ORG_ADMIN, PLATFORM_ADMIN, QA, TECHNICIAN})
+ADMIN_ROLES = frozenset({ORG_ADMIN, PLATFORM_ADMIN})
 
 
 @dataclass
@@ -42,6 +49,13 @@ def _load_user_from_creds(
     user = db.get(User, uid)
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="Account not found or inactive")
+    token_ver = payload.get("ver", 0)
+    try:
+        token_ver_i = int(token_ver)
+    except (TypeError, ValueError):
+        token_ver_i = 0
+    if int(getattr(user, "token_version", 0) or 0) != token_ver_i:
+        raise HTTPException(status_code=401, detail="Session revoked — please sign in again")
     return user, payload
 
 
@@ -76,13 +90,23 @@ def get_tenant_context(
         raise HTTPException(status_code=401, detail="Session missing workspace — please sign in again") from None
     if not user_can_access_tenant(db, user, tenant_id):
         raise HTTPException(status_code=403, detail="You do not have access to this workspace")
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None or not tenant.active:
+        raise HTTPException(status_code=403, detail="This workspace is inactive")
     return TenantContext(user=user, tenant_id=tenant_id)
 
 
 def require_admin(ctx: TenantContext = Depends(get_tenant_context)) -> TenantContext:
     """Org admin or platform admin acting in the active tenant."""
-    if ctx.user.role not in (ORG_ADMIN, PLATFORM_ADMIN):
+    if ctx.user.role not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Admin access required")
+    return ctx
+
+
+def require_writer(ctx: TenantContext = Depends(get_tenant_context)) -> TenantContext:
+    """Admin / QA / technician — can mutate equipment & calibrations (not delete)."""
+    if ctx.user.role not in WRITER_ROLES:
+        raise HTTPException(status_code=403, detail="Write access required")
     return ctx
 
 
@@ -108,8 +132,15 @@ def get_optional_user(
     user = db.get(User, uid)
     if user is None or not user.active:
         return None
+    token_ver = payload.get("ver", 0)
+    try:
+        token_ver_i = int(token_ver)
+    except (TypeError, ValueError):
+        token_ver_i = 0
+    if int(getattr(user, "token_version", 0) or 0) != token_ver_i:
+        return None
     return user
 
 
 def is_org_admin_role(role: str) -> bool:
-    return role in (ORG_ADMIN, PLATFORM_ADMIN)
+    return role in ADMIN_ROLES

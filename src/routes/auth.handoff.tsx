@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { setToken } from "@/lib/auth";
+import { exchangeHandoffCode } from "@/lib/api";
+import { setSessionTokens } from "@/lib/auth";
 
 export const Route = createFileRoute("/auth/handoff")({
   head: () => ({ meta: [{ title: "Opening workspace · TrueGage" }] }),
@@ -12,19 +13,35 @@ function HandoffPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    // Legacy hash token support (clear immediately; prefer codes)
     const hash = window.location.hash.startsWith("#")
       ? window.location.hash.slice(1)
       : window.location.hash;
-    const params = new URLSearchParams(hash);
-    const token = params.get("token");
-    if (!token) {
-      setError("Missing handoff token. Open the company again from Master Admin.");
+    const hashParams = new URLSearchParams(hash);
+    const legacyToken = hashParams.get("token");
+
+    window.history.replaceState(null, "", "/auth/handoff");
+
+    if (code) {
+      void exchangeHandoffCode(code)
+        .then((session) => {
+          setSessionTokens(session.access_token, session.refresh_token);
+          void navigate({ to: "/" });
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Handoff failed");
+        });
       return;
     }
-    setToken(token);
-    // Clear token from URL so it is not left in history
-    window.history.replaceState(null, "", "/auth/handoff");
-    void navigate({ to: "/" });
+
+    if (legacyToken) {
+      setError("This open-company link is outdated. Open the company again from Master Admin.");
+      return;
+    }
+
+    setError("Missing handoff code. Open the company again from Master Admin.");
   }, [navigate]);
 
   return (

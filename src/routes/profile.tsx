@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { getMe, updateMe, type AuthUser, type UserRole } from "@/lib/api";
+import { getMe, updateMe, type AuthUser } from "@/lib/api";
 import { roleDisplayLabel, userInitials, type UserProfile } from "@/lib/compliance";
 import { toast } from "sonner";
 import { Info, Shield } from "lucide-react";
@@ -64,7 +64,6 @@ function ProfilePage() {
         job_title: profile.jobTitle.trim(),
         department: profile.department.trim(),
         phone: profile.phone.trim(),
-        role: profile.role as UserRole,
         timezone: profile.timezone,
         locale: profile.locale,
         notify_email: profile.notifyEmail,
@@ -156,17 +155,15 @@ function ProfilePage() {
               />
             </Field>
             <Field label="Role" htmlFor="profile-role">
-              <select
+              <Input
                 id="profile-role"
-                value={profile.role}
-                onChange={(e) => set("role", e.target.value as UserProfile["role"])}
-                className="tg-select"
-              >
-                <option value="admin">Admin</option>
-                <option value="qa">QA</option>
-                <option value="technician">Technician</option>
-                <option value="member">Member</option>
-              </select>
+                value={roleDisplayLabel(profile.role)}
+                disabled
+                readOnly
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Roles are managed by your organization admin in Settings.
+              </p>
             </Field>
           </div>
         </Section>

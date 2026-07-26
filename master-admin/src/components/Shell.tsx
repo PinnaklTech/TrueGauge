@@ -1,7 +1,26 @@
 import { Navigate, Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getMe } from "@/lib/api";
-import { clearToken, isAuthenticated } from "@/lib/auth";
+import { clearToken, getToken, isAuthenticated } from "@/lib/auth";
+
+async function signOut(navigate: (path: string) => void) {
+  try {
+    const token = getToken();
+    if (token) {
+      const API_URL =
+        (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ||
+        "http://localhost:8000";
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+  clearToken();
+  navigate("/login");
+}
 
 export function RequireAuth() {
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
@@ -34,10 +53,7 @@ export function Shell() {
             type="button"
             className="btn btn-ghost"
             style={{ marginTop: "0.65rem", width: "100%" }}
-            onClick={() => {
-              clearToken();
-              void navigate("/login");
-            }}
+            onClick={() => void signOut((path) => void navigate(path))}
           >
             Sign out
           </button>

@@ -1,4 +1,4 @@
-import { clearToken, getToken } from "@/lib/auth";
+import { clearToken, getRefreshToken, getToken, setSessionTokens } from "@/lib/auth";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8000";
 export const APP_URL = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
@@ -11,36 +11,6 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = (await res.json()) as { detail?: string };
-      if (typeof body.detail === "string") detail = body.detail;
-    } catch {
-      /* ignore */
-    }
-    if (res.status === 401) {
-      clearToken();
-      if (!window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login";
-      }
-    }
-    throw new ApiError(detail || `Request failed (${res.status})`, res.status);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
 export interface AuthUser {
   id: number;
   email: string;
@@ -51,9 +21,75 @@ export interface AuthUser {
 
 export interface AuthSession {
   access_token: string;
+  refresh_token?: string | null;
   user: AuthUser;
   tenant_id: number;
   tenant_name: string;
+  expires_in?: number;
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+        if (!res.ok) return false;
+        const session = (await res.json()) as AuthSession;
+        setSessionTokens(session.access_token, session.refresh_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    if (
+      res.status === 401 &&
+      !retried &&
+      !path.startsWith("/api/auth/login") &&
+      !path.startsWith("/api/auth/refresh")
+    ) {
+      const ok = await tryRefresh();
+      if (ok) return request<T>(path, init, true);
+      clearToken();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+    }
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(detail || `Request failed (${res.status})`, res.status);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
 }
 
 export interface TenantItem {
@@ -130,6 +166,8 @@ export async function updateTenant(id: number, payload: { name?: string; active?
   });
 }
 
-export async function switchTenant(id: number) {
-  return request<AuthSession>(`/api/tenants/${id}/switch`, { method: "POST" });
+export async function createHandoffCode(id: number) {
+  return request<{ code: string; expires_in: number }>(`/api/tenants/${id}/handoff`, {
+    method: "POST",
+  });
 }

@@ -35,6 +35,7 @@ import {
   getOrgProfile,
   listEquipment,
   listNotifications,
+  logout,
   type AuthUser,
 } from "@/lib/api";
 import { clearToken, isAuthenticated } from "@/lib/auth";
@@ -276,8 +277,10 @@ export function AppShell({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
-              clearToken();
-              window.location.href = "/auth/login";
+              void logout().finally(() => {
+                clearToken();
+                window.location.href = "/auth/login";
+              });
             }}
           >
             <LogOut className="mr-2 h-4 w-4" /> Sign out
@@ -393,8 +396,10 @@ export function AppShell({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => {
-                  clearToken();
-                  window.location.href = "/auth/login";
+                  void logout().finally(() => {
+                    clearToken();
+                    window.location.href = "/auth/login";
+                  });
                 }}
               >
                 <LogOut className="mr-2 h-4 w-4" /> Sign out

@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { login } from "@/lib/api";
-import { setToken } from "@/lib/auth";
+import { setSessionTokens } from "@/lib/auth";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Check, Gauge, LogIn } from "lucide-react";
@@ -27,7 +27,7 @@ function LoginPage() {
     setSubmitting(true);
     try {
       const session = await login(email.trim(), password);
-      setToken(session.access_token);
+      setSessionTokens(session.access_token, session.refresh_token);
       toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
       void navigate({ to: "/" });
     } catch (err) {

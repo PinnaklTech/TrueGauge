@@ -24,6 +24,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-truegauge}:${POSTGRES_PASSWORD:-truegauge}@db:5432/${POSTGRES_DB:-truegauge}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-long-random-string}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:8081,http://127.0.0.1:5173,http://127.0.0.1:8080,http://127.0.0.1:8081}
       ODOO_MODEL: ${ODOO_MODEL:-maintenance.equipment}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:8080}
