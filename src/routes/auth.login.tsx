@@ -1,12 +1,22 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { login } from "@/lib/api";
+import {
+  getMe,
+  getOrgProfile,
+  listAuditEvents,
+  listCertificates,
+  listEquipment,
+  listNotifications,
+  login,
+  type AuthSession,
+} from "@/lib/api";
 import { setSessionTokens } from "@/lib/auth";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Check, Gauge, LogIn } from "lucide-react";
+import { Check, Gauge, Loader2, LogIn } from "lucide-react";
 import { LoginAtmosphere } from "@/components/tg/login-enter-transition";
 
 export const Route = createFileRoute("/auth/login")({
@@ -16,33 +26,115 @@ export const Route = createFileRoute("/auth/login")({
 
 const features = ["Equipment registry", "Due-date alerts", "Compliance reports"] as const;
 
+async function warmWorkspaceCache(queryClient: QueryClient, session: AuthSession) {
+  queryClient.setQueryData(["me"], {
+    ...session.user,
+    tenant_id: session.tenant_id,
+    tenant_name: session.tenant_name,
+    tenant_slug: session.tenant_slug,
+  });
+
+  const me = await queryClient.fetchQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
+
+  const tasks: Promise<unknown>[] = [
+    queryClient.prefetchQuery({
+      queryKey: ["equipment"],
+      queryFn: () => listEquipment(),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: ["org"],
+      queryFn: getOrgProfile,
+      staleTime: 5 * 60_000,
+    }),
+    queryClient.prefetchQuery({
+      queryKey: ["notifications"],
+      queryFn: () => listNotifications(),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: ["audit"],
+      queryFn: () => listAuditEvents(25),
+    }),
+  ];
+
+  if (me.storage_enabled) {
+    tasks.push(
+      queryClient.prefetchQuery({
+        queryKey: ["certificates", "dashboard"],
+        queryFn: () => listCertificates(),
+        staleTime: 60_000,
+      }),
+    );
+  }
+
+  await Promise.all(tasks);
+}
+
 function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "signing-in" | "loading-workspace">("idle");
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setPhase("signing-in");
     try {
       const session = await login(email.trim(), password);
       setSessionTokens(session.access_token, session.refresh_token);
-      toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
+      setPhase("loading-workspace");
+
       if (session.tenant_slug) {
-        void navigate({ to: "/workspace/$slug", params: { slug: session.tenant_slug } });
-      } else {
-        void navigate({ to: "/" });
+        try {
+          await warmWorkspaceCache(queryClient, session);
+        } catch {
+          // Still enter the app; dashboard will fetch if warmup failed.
+        }
+        toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
+        await navigate({
+          to: "/workspace/$slug",
+          params: { slug: session.tenant_slug },
+          replace: true,
+        });
+        return;
       }
+
+      toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
+      await navigate({ to: "/", replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
       setSubmitting(false);
+      setPhase("idle");
     }
   };
 
+  const busy = submitting;
+  const statusLabel =
+    phase === "loading-workspace" ? "Loading your workspace…" : "Signing in…";
+
   return (
     <div className="relative flex min-h-screen w-full overflow-hidden bg-white text-foreground">
+      {busy && (
+        <div
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/85 backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <Loader2 className="h-9 w-9 animate-spin text-primary" />
+          <p className="mt-4 font-display text-base font-semibold tracking-tight text-teal-900">
+            {statusLabel}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">Hang tight — preparing your dashboard</p>
+        </div>
+      )}
+
       <aside className="relative hidden w-[52%] shrink-0 flex-col justify-between overflow-hidden lg:flex">
         <LoginAtmosphere />
 
@@ -113,7 +205,7 @@ function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
-                  disabled={submitting}
+                  disabled={busy}
                   className="h-11 rounded-lg border-slate-200 bg-white text-slate-900 shadow-none placeholder:text-slate-400"
                 />
               </div>
@@ -129,17 +221,17 @@ function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  disabled={submitting}
+                  disabled={busy}
                   className="h-11 rounded-lg border-slate-200 bg-white text-slate-900 shadow-none placeholder:text-slate-400"
                 />
               </div>
               <Button
                 type="submit"
                 className="h-11 w-full gap-2 rounded-lg text-sm font-semibold"
-                disabled={submitting}
+                disabled={busy}
               >
-                <LogIn className="h-4 w-4" />
-                {submitting ? "Signing in…" : "Sign in"}
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                {busy ? statusLabel : "Sign in"}
               </Button>
             </form>
 
