@@ -1,10 +1,10 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { getMe } from "@/lib/api";
 
 export const Route = createFileRoute("/workspace/$slug")({
-  pendingComponent: WorkspacePending,
+  // Boot overlay (root portal) covers pending — avoid a second mid-page spinner.
+  pendingComponent: () => null,
   beforeLoad: async ({ params, context }) => {
     if (!getToken()) {
       throw redirect({ to: "/auth/login" });
@@ -33,15 +33,6 @@ export const Route = createFileRoute("/workspace/$slug")({
   },
   component: WorkspaceLayout,
 });
-
-function WorkspacePending() {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      <p className="mt-3 text-sm text-muted-foreground">Loading workspace…</p>
-    </div>
-  );
-}
 
 function WorkspaceLayout() {
   return <Outlet />;

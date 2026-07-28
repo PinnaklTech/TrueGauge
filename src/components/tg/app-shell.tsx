@@ -17,10 +17,16 @@ import {
   PanelLeftOpen,
   User as UserIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { workspacePath } from "@/lib/workspace";
+import {
+  endWorkspaceBoot,
+  isWorkspaceBootActive,
+  takeWelcomeToast,
+} from "@/lib/workspace-boot";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,9 +154,11 @@ export function AppShell({
   const tourStarted = useRef(false);
   const [tourPaused, setTourPaused] = useState(false);
   const [tourRunning, setTourRunning] = useState(false);
+  const bootEnded = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isAuthenticated()) {
+      endWorkspaceBoot();
       window.location.href = "/auth/login";
       return;
     }
@@ -174,15 +182,18 @@ export function AppShell({
     setMobileOpen(false);
   }, [pathname]);
 
-  const { data } = useQuery({
+  const equipmentQuery = useQuery({
     queryKey: ["equipment"],
     queryFn: () => listEquipment(),
     enabled: authReady,
+    staleTime: 30_000,
   });
+  const { data } = equipmentQuery;
   const { data: notifData } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => listNotifications(),
     enabled: authReady,
+    staleTime: 30_000,
     refetchInterval: 60_000,
   });
   const { data: me, refetch: refetchMe } = useQuery({
@@ -197,6 +208,29 @@ export function AppShell({
     enabled: authReady,
     staleTime: 5 * 60_000,
   });
+
+  // Keep the full-screen boot overlay until shell + core dashboard data are ready.
+  useEffect(() => {
+    if (!authReady || bootEnded.current) return;
+    if (!equipmentQuery.isFetched && !equipmentQuery.isError) return;
+    bootEnded.current = true;
+    const welcome = takeWelcomeToast();
+    endWorkspaceBoot();
+    if (welcome) toast.success(welcome);
+  }, [authReady, equipmentQuery.isFetched, equipmentQuery.isError]);
+
+  // Safety: never leave the boot overlay stuck if a request hangs.
+  useEffect(() => {
+    if (!isWorkspaceBootActive()) return;
+    const timer = window.setTimeout(() => {
+      if (bootEnded.current) return;
+      bootEnded.current = true;
+      const welcome = takeWelcomeToast();
+      endWorkspaceBoot();
+      if (welcome) toast.success(welcome);
+    }, 12_000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const onProfile = (ev: Event) => {
@@ -368,14 +402,8 @@ export function AppShell({
   // Pause/finish/skip handle teardown explicitly via product-tour module state.
 
   if (!authReady) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-background" role="status" aria-live="polite">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        </div>
-      </div>
-    );
+    // Global WorkspaceBootOverlay covers this; avoid a second mid-page spinner.
+    return <div className="min-h-screen bg-background" aria-hidden />;
   }
 
   const crumbTrail =

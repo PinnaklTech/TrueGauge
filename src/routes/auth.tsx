@@ -1,9 +1,13 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Gauge, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Gauge } from "lucide-react";
+import { useEffect } from "react";
 import { isAuthenticated } from "@/lib/auth";
 import { getMe, getOrgProfile, listAuditEvents, listEquipment, listNotifications } from "@/lib/api";
+import {
+  endWorkspaceBoot,
+  startWorkspaceBoot,
+} from "@/lib/workspace-boot";
 
 export const Route = createFileRoute("/auth")({
   component: AuthLayout,
@@ -15,17 +19,13 @@ function AuthLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isLogin = pathname === "/auth/login";
   const isHandoff = pathname === "/auth/handoff";
-  const [redirecting, setRedirecting] = useState(
-    () => !isHandoff && typeof window !== "undefined" && isAuthenticated(),
-  );
 
   useEffect(() => {
     if (isHandoff) return;
-    if (!isAuthenticated()) {
-      setRedirecting(false);
-      return;
-    }
-    setRedirecting(true);
+    if (!isAuthenticated()) return;
+
+    // Already signed in — full-screen boot covers the transition (no mid-page collapse).
+    startWorkspaceBoot("Opening your workspace…");
     void (async () => {
       try {
         const session = await queryClient.fetchQuery({
@@ -34,11 +34,16 @@ function AuthLayout() {
           staleTime: 5 * 60_000,
         });
         if (!session.tenant_slug) {
+          endWorkspaceBoot();
           await navigate({ to: "/", replace: true });
           return;
         }
         await Promise.all([
-          queryClient.prefetchQuery({ queryKey: ["equipment"], queryFn: () => listEquipment() }),
+          queryClient.prefetchQuery({
+            queryKey: ["equipment"],
+            queryFn: () => listEquipment(),
+            staleTime: 30_000,
+          }),
           queryClient.prefetchQuery({
             queryKey: ["org"],
             queryFn: getOrgProfile,
@@ -47,10 +52,12 @@ function AuthLayout() {
           queryClient.prefetchQuery({
             queryKey: ["notifications"],
             queryFn: () => listNotifications(),
+            staleTime: 30_000,
           }),
           queryClient.prefetchQuery({
             queryKey: ["audit"],
             queryFn: () => listAuditEvents(25),
+            staleTime: 30_000,
           }),
         ]);
         await navigate({
@@ -59,7 +66,7 @@ function AuthLayout() {
           replace: true,
         });
       } catch {
-        setRedirecting(false);
+        endWorkspaceBoot();
         await navigate({ to: "/", replace: true });
       }
     })();
@@ -67,16 +74,6 @@ function AuthLayout() {
 
   // Login owns the full viewport; handoff is minimal
   if (isLogin || isHandoff) {
-    if (isLogin && redirecting) {
-      return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-white">
-          <Loader2 className="h-9 w-9 animate-spin text-primary" />
-          <p className="mt-4 font-display text-base font-semibold tracking-tight text-teal-900">
-            Opening your workspace…
-          </p>
-        </div>
-      );
-    }
     return <Outlet />;
   }
 

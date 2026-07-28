@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { ThemeProvider } from "../lib/theme";
 import { Toaster } from "@/components/ui/sonner";
+import { WorkspaceBootOverlay } from "@/components/tg/workspace-boot-overlay";
 import { resolveTenantSlug } from "@/lib/workspace";
 
 function NotFoundComponent() {
@@ -140,6 +141,7 @@ function RootComponent() {
       <ThemeProvider>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
+        <WorkspaceBootOverlay />
         <Toaster />
       </ThemeProvider>
     </QueryClientProvider>

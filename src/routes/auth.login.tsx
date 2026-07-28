@@ -14,6 +14,12 @@ import {
   type AuthSession,
 } from "@/lib/api";
 import { setSessionTokens } from "@/lib/auth";
+import {
+  endWorkspaceBoot,
+  queueWelcomeToast,
+  setWorkspaceBootMessage,
+  startWorkspaceBoot,
+} from "@/lib/workspace-boot";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Check, Gauge, Loader2, LogIn } from "lucide-react";
@@ -44,6 +50,7 @@ async function warmWorkspaceCache(queryClient: QueryClient, session: AuthSession
     queryClient.prefetchQuery({
       queryKey: ["equipment"],
       queryFn: () => listEquipment(),
+      staleTime: 30_000,
     }),
     queryClient.prefetchQuery({
       queryKey: ["org"],
@@ -53,10 +60,12 @@ async function warmWorkspaceCache(queryClient: QueryClient, session: AuthSession
     queryClient.prefetchQuery({
       queryKey: ["notifications"],
       queryFn: () => listNotifications(),
+      staleTime: 30_000,
     }),
     queryClient.prefetchQuery({
       queryKey: ["audit"],
       queryFn: () => listAuditEvents(25),
+      staleTime: 30_000,
     }),
   ];
 
@@ -79,24 +88,25 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [phase, setPhase] = useState<"idle" | "signing-in" | "loading-workspace">("idle");
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    setPhase("signing-in");
+    startWorkspaceBoot("Signing in…");
     try {
       const session = await login(email.trim(), password);
       setSessionTokens(session.access_token, session.refresh_token);
-      setPhase("loading-workspace");
+      setWorkspaceBootMessage("Loading your workspace…");
+
+      const welcome = `Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`;
 
       if (session.tenant_slug) {
         try {
           await warmWorkspaceCache(queryClient, session);
         } catch {
-          // Still enter the app; dashboard will fetch if warmup failed.
+          // AppShell will fetch; boot overlay stays until shell is ready.
         }
-        toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
+        queueWelcomeToast(welcome);
         await navigate({
           to: "/workspace/$slug",
           params: { slug: session.tenant_slug },
@@ -105,36 +115,18 @@ function LoginPage() {
         return;
       }
 
-      toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
+      endWorkspaceBoot();
+      toast.success(welcome);
       await navigate({ to: "/", replace: true });
     } catch (err) {
+      endWorkspaceBoot();
       toast.error(err instanceof Error ? err.message : "Sign in failed");
       setSubmitting(false);
-      setPhase("idle");
     }
   };
 
-  const busy = submitting;
-  const statusLabel =
-    phase === "loading-workspace" ? "Loading your workspace…" : "Signing in…";
-
   return (
     <div className="relative flex min-h-screen w-full overflow-hidden bg-white text-foreground">
-      {busy && (
-        <div
-          className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/85 backdrop-blur-[2px]"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <Loader2 className="h-9 w-9 animate-spin text-primary" />
-          <p className="mt-4 font-display text-base font-semibold tracking-tight text-teal-900">
-            {statusLabel}
-          </p>
-          <p className="mt-1 text-sm text-slate-500">Hang tight — preparing your dashboard</p>
-        </div>
-      )}
-
       <aside className="relative hidden w-[52%] shrink-0 flex-col justify-between overflow-hidden lg:flex">
         <LoginAtmosphere />
 
@@ -205,7 +197,7 @@ function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
-                  disabled={busy}
+                  disabled={submitting}
                   className="h-11 rounded-lg border-slate-200 bg-white text-slate-900 shadow-none placeholder:text-slate-400"
                 />
               </div>
@@ -221,17 +213,17 @@ function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="current-password"
-                  disabled={busy}
+                  disabled={submitting}
                   className="h-11 rounded-lg border-slate-200 bg-white text-slate-900 shadow-none placeholder:text-slate-400"
                 />
               </div>
               <Button
                 type="submit"
                 className="h-11 w-full gap-2 rounded-lg text-sm font-semibold"
-                disabled={busy}
+                disabled={submitting}
               >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-                {busy ? statusLabel : "Sign in"}
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                {submitting ? "Please wait…" : "Sign in"}
               </Button>
             </form>
 
