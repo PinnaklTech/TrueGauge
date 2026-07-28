@@ -30,6 +30,14 @@ def new_notification_id() -> str:
     return f"ntf-{uuid4().hex[:12]}"
 
 
+def new_audit_id() -> str:
+    return f"aud-{uuid4().hex[:12]}"
+
+
+def new_certificate_id() -> str:
+    return f"crt-{uuid4().hex[:12]}"
+
+
 class Tenant(Base):
     """Customer organization / workspace."""
 
@@ -39,7 +47,28 @@ class Tenant(Base):
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Staff-controlled certificate vault (R2). Off for new companies until enabled.
+    storage_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PlatformSettings(Base):
+    """Singleton platform-wide settings (id=1), e.g. TrueGage system SMTP."""
+
+    __tablename__ = "platform_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    smtp_host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int] = mapped_column(Integer, default=587, server_default="587")
+    smtp_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_password_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    smtp_from_name: Mapped[str] = mapped_column(String(255), default="TrueGage", server_default="TrueGage")
+    smtp_last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -92,6 +121,21 @@ class AppSettings(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     accent_color: Mapped[str] = mapped_column(String(32), default="#0f766e", server_default="#0f766e")
+    # JSON: {"departments":[...],"categories":[...],"locations":[...]}
+    taxonomy_json: Mapped[str] = mapped_column(
+        Text,
+        default='{"departments":[],"categories":[],"locations":[]}',
+        server_default='{"departments":[],"categories":[],"locations":[]}',
+    )
+
+    # Reminder engine policy (workspace-level) — opt-in; admins enable in Settings
+    remind_30d: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    remind_14d: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    remind_7d: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    remind_1d: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    remind_overdue_daily: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    remind_weekly_digest: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    reminder_hour_local: Mapped[int] = mapped_column(Integer, default=8, server_default="8")
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -116,11 +160,14 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(64), default="admin", server_default="admin")
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     locale: Mapped[str] = mapped_column(String(32), default="en-US", server_default="en-US")
-    notify_email: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    notify_in_app: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    notify_email: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    notify_in_app: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Bumped on password change / logout-all / deactivate to invalidate access tokens
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # First-login onboarding (null = not completed; new users start null)
+    profile_setup_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    product_tour_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -189,6 +236,12 @@ class EquipmentCache(Base):
         cascade="all, delete-orphan",
         order_by="CalibrationRecord.performed_on.desc()",
     )
+    certificates: Mapped[list["Certificate"]] = relationship(
+        "Certificate",
+        back_populates="equipment",
+        cascade="all, delete-orphan",
+        order_by="Certificate.created_at.desc()",
+    )
 
 
 class CalibrationRecord(Base):
@@ -213,6 +266,41 @@ class CalibrationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     equipment: Mapped["EquipmentCache"] = relationship("EquipmentCache", back_populates="calibrations")
+    certificates: Mapped[list["Certificate"]] = relationship(
+        "Certificate",
+        back_populates="calibration",
+    )
+
+
+class Certificate(Base):
+    """PDF certificate stored in private Cloudflare R2, linked to equipment."""
+
+    __tablename__ = "certificates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, default=new_certificate_id)
+    equipment_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("equipment_cache.id", ondelete="CASCADE"), index=True
+    )
+    calibration_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("calibration_records.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    object_key: Mapped[str] = mapped_column(String(512), default="")
+    file_name: Mapped[str] = mapped_column(String(255), default="")
+    content_type: Mapped[str] = mapped_column(String(128), default="application/pdf", server_default="application/pdf")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    sha256: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending", index=True)
+    uploaded_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    equipment: Mapped["EquipmentCache"] = relationship("EquipmentCache", back_populates="certificates")
+    calibration: Mapped[Optional["CalibrationRecord"]] = relationship(
+        "CalibrationRecord", back_populates="certificates"
+    )
 
 
 class NotificationRecipient(Base):
@@ -257,6 +345,24 @@ class AppNotification(Base):
     )
 
 
+class NotificationRead(Base):
+    """Per-user read markers for shared workspace notifications."""
+
+    __tablename__ = "notification_reads"
+    __table_args__ = (
+        UniqueConstraint("user_id", "notification_id", name="uq_notification_reads_user_notif"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    notification_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("app_notifications.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class EmailAuditLog(Base):
     """History of outbound emails (check / overdue alerts)."""
 
@@ -276,3 +382,105 @@ class EmailAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class AuthEvent(Base):
+    """Lightweight audit of auth / staff actions for Master Admin Activity."""
+
+    __tablename__ = "auth_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="ok", server_default="ok", index=True)
+    email: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    tenant_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    ip: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    detail: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class AuditEvent(Base):
+    """Tenant-scoped activity for the customer dashboard audit feed."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    public_id: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, default=new_audit_id
+    )
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_name: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    target_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    target_name: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    detail: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class ReminderJob(Base):
+    """Per-tenant daily/weekly reminder run claim row."""
+
+    __tablename__ = "reminder_jobs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "job_kind", "job_date_local", name="uq_reminder_jobs_tenant_kind_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    job_kind: Mapped[str] = mapped_column(String(32))  # daily | weekly_digest
+    job_date_local: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReminderDispatch(Base):
+    """Idempotent send ledger for reminder emails / in-app marks."""
+
+    __tablename__ = "reminder_dispatches"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "kind",
+            "period_key",
+            "recipient_key",
+            "channel",
+            name="uq_reminder_dispatches_unique",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    period_key: Mapped[str] = mapped_column(String(255))
+    recipient_key: Mapped[str] = mapped_column(String(255))
+    channel: Mapped[str] = mapped_column(String(16))  # email | in_app
+    status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending", index=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    equipment_public_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+

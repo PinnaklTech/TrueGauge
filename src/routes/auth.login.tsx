@@ -29,7 +29,11 @@ function LoginPage() {
       const session = await login(email.trim(), password);
       setSessionTokens(session.access_token, session.refresh_token);
       toast.success(`Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`);
-      void navigate({ to: "/" });
+      if (session.tenant_slug) {
+        void navigate({ to: "/workspace/$slug", params: { slug: session.tenant_slug } });
+      } else {
+        void navigate({ to: "/" });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign in failed");
     } finally {
@@ -120,7 +124,7 @@ function LoginPage() {
                 <Input
                   id="pw"
                   type="password"
-                  placeholder="At least 8 characters"
+                  placeholder="At least 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required

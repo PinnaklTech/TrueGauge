@@ -9,51 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as ReportsRouteImport } from './routes/reports'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as CertificatesRouteImport } from './routes/certificates'
-import { Route as CalibrationsRouteImport } from './routes/calibrations'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as EquipmentIndexRouteImport } from './routes/equipment.index'
-import { Route as EquipmentIdRouteImport } from './routes/equipment.$id'
+import { Route as WorkspaceSlugRouteImport } from './routes/workspace.$slug'
 import { Route as AuthRegisterRouteImport } from './routes/auth.register'
 import { Route as AuthLoginRouteImport } from './routes/auth.login'
 import { Route as AuthHandoffRouteImport } from './routes/auth.handoff'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
+import { Route as WorkspaceSlugIndexRouteImport } from './routes/workspace.$slug.index'
+import { Route as WorkspaceSlugSettingsRouteImport } from './routes/workspace.$slug.settings'
+import { Route as WorkspaceSlugReportsRouteImport } from './routes/workspace.$slug.reports'
+import { Route as WorkspaceSlugProfileRouteImport } from './routes/workspace.$slug.profile'
+import { Route as WorkspaceSlugNotificationsRouteImport } from './routes/workspace.$slug.notifications'
+import { Route as WorkspaceSlugCertificatesRouteImport } from './routes/workspace.$slug.certificates'
+import { Route as WorkspaceSlugCalibrationsRouteImport } from './routes/workspace.$slug.calibrations'
+import { Route as WorkspaceSlugEquipmentIndexRouteImport } from './routes/workspace.$slug.equipment.index'
+import { Route as WorkspaceSlugEquipmentIdRouteImport } from './routes/workspace.$slug.equipment.$id'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NotificationsRoute = NotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CertificatesRoute = CertificatesRouteImport.update({
-  id: '/certificates',
-  path: '/certificates',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CalibrationsRoute = CalibrationsRouteImport.update({
-  id: '/calibrations',
-  path: '/calibrations',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -64,14 +36,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EquipmentIndexRoute = EquipmentIndexRouteImport.update({
-  id: '/equipment/',
-  path: '/equipment/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EquipmentIdRoute = EquipmentIdRouteImport.update({
-  id: '/equipment/$id',
-  path: '/equipment/$id',
+const WorkspaceSlugRoute = WorkspaceSlugRouteImport.update({
+  id: '/workspace/$slug',
+  path: '/workspace/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
@@ -94,164 +61,175 @@ const AuthForgotRoute = AuthForgotRouteImport.update({
   path: '/forgot',
   getParentRoute: () => AuthRoute,
 } as any)
+const WorkspaceSlugIndexRoute = WorkspaceSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugSettingsRoute = WorkspaceSlugSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugReportsRoute = WorkspaceSlugReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugProfileRoute = WorkspaceSlugProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugNotificationsRoute =
+  WorkspaceSlugNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => WorkspaceSlugRoute,
+  } as any)
+const WorkspaceSlugCertificatesRoute =
+  WorkspaceSlugCertificatesRouteImport.update({
+    id: '/certificates',
+    path: '/certificates',
+    getParentRoute: () => WorkspaceSlugRoute,
+  } as any)
+const WorkspaceSlugCalibrationsRoute =
+  WorkspaceSlugCalibrationsRouteImport.update({
+    id: '/calibrations',
+    path: '/calibrations',
+    getParentRoute: () => WorkspaceSlugRoute,
+  } as any)
+const WorkspaceSlugEquipmentIndexRoute =
+  WorkspaceSlugEquipmentIndexRouteImport.update({
+    id: '/equipment/',
+    path: '/equipment/',
+    getParentRoute: () => WorkspaceSlugRoute,
+  } as any)
+const WorkspaceSlugEquipmentIdRoute =
+  WorkspaceSlugEquipmentIdRouteImport.update({
+    id: '/equipment/$id',
+    path: '/equipment/$id',
+    getParentRoute: () => WorkspaceSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
-  '/calibrations': typeof CalibrationsRoute
-  '/certificates': typeof CertificatesRoute
-  '/notifications': typeof NotificationsRoute
-  '/profile': typeof ProfileRoute
-  '/reports': typeof ReportsRoute
-  '/settings': typeof SettingsRoute
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/handoff': typeof AuthHandoffRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
-  '/equipment/$id': typeof EquipmentIdRoute
-  '/equipment/': typeof EquipmentIndexRoute
+  '/workspace/$slug': typeof WorkspaceSlugRouteWithChildren
+  '/workspace/$slug/calibrations': typeof WorkspaceSlugCalibrationsRoute
+  '/workspace/$slug/certificates': typeof WorkspaceSlugCertificatesRoute
+  '/workspace/$slug/notifications': typeof WorkspaceSlugNotificationsRoute
+  '/workspace/$slug/profile': typeof WorkspaceSlugProfileRoute
+  '/workspace/$slug/reports': typeof WorkspaceSlugReportsRoute
+  '/workspace/$slug/settings': typeof WorkspaceSlugSettingsRoute
+  '/workspace/$slug/': typeof WorkspaceSlugIndexRoute
+  '/workspace/$slug/equipment/$id': typeof WorkspaceSlugEquipmentIdRoute
+  '/workspace/$slug/equipment/': typeof WorkspaceSlugEquipmentIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
-  '/calibrations': typeof CalibrationsRoute
-  '/certificates': typeof CertificatesRoute
-  '/notifications': typeof NotificationsRoute
-  '/profile': typeof ProfileRoute
-  '/reports': typeof ReportsRoute
-  '/settings': typeof SettingsRoute
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/handoff': typeof AuthHandoffRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
-  '/equipment/$id': typeof EquipmentIdRoute
-  '/equipment': typeof EquipmentIndexRoute
+  '/workspace/$slug/calibrations': typeof WorkspaceSlugCalibrationsRoute
+  '/workspace/$slug/certificates': typeof WorkspaceSlugCertificatesRoute
+  '/workspace/$slug/notifications': typeof WorkspaceSlugNotificationsRoute
+  '/workspace/$slug/profile': typeof WorkspaceSlugProfileRoute
+  '/workspace/$slug/reports': typeof WorkspaceSlugReportsRoute
+  '/workspace/$slug/settings': typeof WorkspaceSlugSettingsRoute
+  '/workspace/$slug': typeof WorkspaceSlugIndexRoute
+  '/workspace/$slug/equipment/$id': typeof WorkspaceSlugEquipmentIdRoute
+  '/workspace/$slug/equipment': typeof WorkspaceSlugEquipmentIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
-  '/calibrations': typeof CalibrationsRoute
-  '/certificates': typeof CertificatesRoute
-  '/notifications': typeof NotificationsRoute
-  '/profile': typeof ProfileRoute
-  '/reports': typeof ReportsRoute
-  '/settings': typeof SettingsRoute
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/handoff': typeof AuthHandoffRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
-  '/equipment/$id': typeof EquipmentIdRoute
-  '/equipment/': typeof EquipmentIndexRoute
+  '/workspace/$slug': typeof WorkspaceSlugRouteWithChildren
+  '/workspace/$slug/calibrations': typeof WorkspaceSlugCalibrationsRoute
+  '/workspace/$slug/certificates': typeof WorkspaceSlugCertificatesRoute
+  '/workspace/$slug/notifications': typeof WorkspaceSlugNotificationsRoute
+  '/workspace/$slug/profile': typeof WorkspaceSlugProfileRoute
+  '/workspace/$slug/reports': typeof WorkspaceSlugReportsRoute
+  '/workspace/$slug/settings': typeof WorkspaceSlugSettingsRoute
+  '/workspace/$slug/': typeof WorkspaceSlugIndexRoute
+  '/workspace/$slug/equipment/$id': typeof WorkspaceSlugEquipmentIdRoute
+  '/workspace/$slug/equipment/': typeof WorkspaceSlugEquipmentIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/auth'
-    | '/calibrations'
-    | '/certificates'
-    | '/notifications'
-    | '/profile'
-    | '/reports'
-    | '/settings'
     | '/auth/forgot'
     | '/auth/handoff'
     | '/auth/login'
     | '/auth/register'
-    | '/equipment/$id'
-    | '/equipment/'
+    | '/workspace/$slug'
+    | '/workspace/$slug/calibrations'
+    | '/workspace/$slug/certificates'
+    | '/workspace/$slug/notifications'
+    | '/workspace/$slug/profile'
+    | '/workspace/$slug/reports'
+    | '/workspace/$slug/settings'
+    | '/workspace/$slug/'
+    | '/workspace/$slug/equipment/$id'
+    | '/workspace/$slug/equipment/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
-    | '/calibrations'
-    | '/certificates'
-    | '/notifications'
-    | '/profile'
-    | '/reports'
-    | '/settings'
     | '/auth/forgot'
     | '/auth/handoff'
     | '/auth/login'
     | '/auth/register'
-    | '/equipment/$id'
-    | '/equipment'
+    | '/workspace/$slug/calibrations'
+    | '/workspace/$slug/certificates'
+    | '/workspace/$slug/notifications'
+    | '/workspace/$slug/profile'
+    | '/workspace/$slug/reports'
+    | '/workspace/$slug/settings'
+    | '/workspace/$slug'
+    | '/workspace/$slug/equipment/$id'
+    | '/workspace/$slug/equipment'
   id:
     | '__root__'
     | '/'
     | '/auth'
-    | '/calibrations'
-    | '/certificates'
-    | '/notifications'
-    | '/profile'
-    | '/reports'
-    | '/settings'
     | '/auth/forgot'
     | '/auth/handoff'
     | '/auth/login'
     | '/auth/register'
-    | '/equipment/$id'
-    | '/equipment/'
+    | '/workspace/$slug'
+    | '/workspace/$slug/calibrations'
+    | '/workspace/$slug/certificates'
+    | '/workspace/$slug/notifications'
+    | '/workspace/$slug/profile'
+    | '/workspace/$slug/reports'
+    | '/workspace/$slug/settings'
+    | '/workspace/$slug/'
+    | '/workspace/$slug/equipment/$id'
+    | '/workspace/$slug/equipment/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
-  CalibrationsRoute: typeof CalibrationsRoute
-  CertificatesRoute: typeof CertificatesRoute
-  NotificationsRoute: typeof NotificationsRoute
-  ProfileRoute: typeof ProfileRoute
-  ReportsRoute: typeof ReportsRoute
-  SettingsRoute: typeof SettingsRoute
-  EquipmentIdRoute: typeof EquipmentIdRoute
-  EquipmentIndexRoute: typeof EquipmentIndexRoute
+  WorkspaceSlugRoute: typeof WorkspaceSlugRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notifications': {
-      id: '/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof NotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/certificates': {
-      id: '/certificates'
-      path: '/certificates'
-      fullPath: '/certificates'
-      preLoaderRoute: typeof CertificatesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/calibrations': {
-      id: '/calibrations'
-      path: '/calibrations'
-      fullPath: '/calibrations'
-      preLoaderRoute: typeof CalibrationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -266,18 +244,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/equipment/': {
-      id: '/equipment/'
-      path: '/equipment'
-      fullPath: '/equipment/'
-      preLoaderRoute: typeof EquipmentIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/equipment/$id': {
-      id: '/equipment/$id'
-      path: '/equipment/$id'
-      fullPath: '/equipment/$id'
-      preLoaderRoute: typeof EquipmentIdRouteImport
+    '/workspace/$slug': {
+      id: '/workspace/$slug'
+      path: '/workspace/$slug'
+      fullPath: '/workspace/$slug'
+      preLoaderRoute: typeof WorkspaceSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/register': {
@@ -308,6 +279,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthForgotRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/workspace/$slug/': {
+      id: '/workspace/$slug/'
+      path: '/'
+      fullPath: '/workspace/$slug/'
+      preLoaderRoute: typeof WorkspaceSlugIndexRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/settings': {
+      id: '/workspace/$slug/settings'
+      path: '/settings'
+      fullPath: '/workspace/$slug/settings'
+      preLoaderRoute: typeof WorkspaceSlugSettingsRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/reports': {
+      id: '/workspace/$slug/reports'
+      path: '/reports'
+      fullPath: '/workspace/$slug/reports'
+      preLoaderRoute: typeof WorkspaceSlugReportsRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/profile': {
+      id: '/workspace/$slug/profile'
+      path: '/profile'
+      fullPath: '/workspace/$slug/profile'
+      preLoaderRoute: typeof WorkspaceSlugProfileRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/notifications': {
+      id: '/workspace/$slug/notifications'
+      path: '/notifications'
+      fullPath: '/workspace/$slug/notifications'
+      preLoaderRoute: typeof WorkspaceSlugNotificationsRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/certificates': {
+      id: '/workspace/$slug/certificates'
+      path: '/certificates'
+      fullPath: '/workspace/$slug/certificates'
+      preLoaderRoute: typeof WorkspaceSlugCertificatesRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/calibrations': {
+      id: '/workspace/$slug/calibrations'
+      path: '/calibrations'
+      fullPath: '/workspace/$slug/calibrations'
+      preLoaderRoute: typeof WorkspaceSlugCalibrationsRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/equipment/': {
+      id: '/workspace/$slug/equipment/'
+      path: '/equipment'
+      fullPath: '/workspace/$slug/equipment/'
+      preLoaderRoute: typeof WorkspaceSlugEquipmentIndexRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/equipment/$id': {
+      id: '/workspace/$slug/equipment/$id'
+      path: '/equipment/$id'
+      fullPath: '/workspace/$slug/equipment/$id'
+      preLoaderRoute: typeof WorkspaceSlugEquipmentIdRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
   }
 }
 
@@ -327,17 +361,38 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface WorkspaceSlugRouteChildren {
+  WorkspaceSlugCalibrationsRoute: typeof WorkspaceSlugCalibrationsRoute
+  WorkspaceSlugCertificatesRoute: typeof WorkspaceSlugCertificatesRoute
+  WorkspaceSlugNotificationsRoute: typeof WorkspaceSlugNotificationsRoute
+  WorkspaceSlugProfileRoute: typeof WorkspaceSlugProfileRoute
+  WorkspaceSlugReportsRoute: typeof WorkspaceSlugReportsRoute
+  WorkspaceSlugSettingsRoute: typeof WorkspaceSlugSettingsRoute
+  WorkspaceSlugIndexRoute: typeof WorkspaceSlugIndexRoute
+  WorkspaceSlugEquipmentIdRoute: typeof WorkspaceSlugEquipmentIdRoute
+  WorkspaceSlugEquipmentIndexRoute: typeof WorkspaceSlugEquipmentIndexRoute
+}
+
+const WorkspaceSlugRouteChildren: WorkspaceSlugRouteChildren = {
+  WorkspaceSlugCalibrationsRoute: WorkspaceSlugCalibrationsRoute,
+  WorkspaceSlugCertificatesRoute: WorkspaceSlugCertificatesRoute,
+  WorkspaceSlugNotificationsRoute: WorkspaceSlugNotificationsRoute,
+  WorkspaceSlugProfileRoute: WorkspaceSlugProfileRoute,
+  WorkspaceSlugReportsRoute: WorkspaceSlugReportsRoute,
+  WorkspaceSlugSettingsRoute: WorkspaceSlugSettingsRoute,
+  WorkspaceSlugIndexRoute: WorkspaceSlugIndexRoute,
+  WorkspaceSlugEquipmentIdRoute: WorkspaceSlugEquipmentIdRoute,
+  WorkspaceSlugEquipmentIndexRoute: WorkspaceSlugEquipmentIndexRoute,
+}
+
+const WorkspaceSlugRouteWithChildren = WorkspaceSlugRoute._addFileChildren(
+  WorkspaceSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
-  CalibrationsRoute: CalibrationsRoute,
-  CertificatesRoute: CertificatesRoute,
-  NotificationsRoute: NotificationsRoute,
-  ProfileRoute: ProfileRoute,
-  ReportsRoute: ReportsRoute,
-  SettingsRoute: SettingsRoute,
-  EquipmentIdRoute: EquipmentIdRoute,
-  EquipmentIndexRoute: EquipmentIndexRoute,
+  WorkspaceSlugRoute: WorkspaceSlugRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

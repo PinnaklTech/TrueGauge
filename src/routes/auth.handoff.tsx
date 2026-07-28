@@ -14,21 +14,29 @@ function HandoffPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    // Legacy hash token support (clear immediately; prefer codes)
+    const queryCode = params.get("code");
+
     const hash = window.location.hash.startsWith("#")
       ? window.location.hash.slice(1)
       : window.location.hash;
     const hashParams = new URLSearchParams(hash);
+    // Prefer fragment so the one-time code never hits reverse-proxy access logs.
+    const hashCode = hashParams.get("code");
     const legacyToken = hashParams.get("token");
+    const code = hashCode || queryCode;
 
+    // Strip code from address bar immediately (query + hash).
     window.history.replaceState(null, "", "/auth/handoff");
 
     if (code) {
       void exchangeHandoffCode(code)
         .then((session) => {
           setSessionTokens(session.access_token, session.refresh_token);
-          void navigate({ to: "/" });
+          if (session.tenant_slug) {
+            void navigate({ to: "/workspace/$slug", params: { slug: session.tenant_slug } });
+          } else {
+            void navigate({ to: "/" });
+          }
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Handoff failed");

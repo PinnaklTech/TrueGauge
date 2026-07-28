@@ -61,12 +61,8 @@ def _load_user_from_creds(
 
 def user_can_access_tenant(db: Session, user: User, tenant_id: int) -> bool:
     if user.role == PLATFORM_ADMIN:
-        return (
-            db.query(TenantMembership)
-            .filter(TenantMembership.user_id == user.id, TenantMembership.tenant_id == tenant_id)
-            .first()
-            is not None
-        )
+        # Staff console: platform admins can access every company
+        return db.get(Tenant, tenant_id) is not None
     return user.tenant_id is not None and int(user.tenant_id) == int(tenant_id)
 
 
@@ -104,7 +100,7 @@ def require_admin(ctx: TenantContext = Depends(get_tenant_context)) -> TenantCon
 
 
 def require_writer(ctx: TenantContext = Depends(get_tenant_context)) -> TenantContext:
-    """Admin / QA / technician — can mutate equipment & calibrations (not delete)."""
+    """Admin / QA / technician — can create, update, and delete equipment & calibrations."""
     if ctx.user.role not in WRITER_ROLES:
         raise HTTPException(status_code=403, detail="Write access required")
     return ctx

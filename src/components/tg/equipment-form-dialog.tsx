@@ -1,5 +1,12 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { AppEquipment, EquipmentPayload } from "@/lib/api";
+import {
+  addOrgTaxonomyTerm,
+  getOrgTaxonomy,
+  type AppEquipment,
+  type EquipmentPayload,
+  type OrgTaxonomyApi,
+  type OrgTaxonomyKind,
+} from "@/lib/api";
 import type { CalStatus } from "@/lib/mock-data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Calendar } from "lucide-react";
 import { toast } from "sonner";
+import { differenceInCalendarDays, parseISO, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
 
 const emptyForm: EquipmentPayload = {
@@ -25,13 +33,30 @@ const emptyForm: EquipmentPayload = {
   serial: "",
   department: "",
   location: "",
-  status: "inactive",
+  status: "calibrated",
   last_calibration: "",
   next_calibration: "",
   frequency_days: 365,
   owner: "",
   responsible_email: "",
 };
+
+function frequencyFromDates(last: string | null | undefined, next: string | null | undefined): number | null {
+  if (!last || !next) return null;
+  const a = parseISO(last.slice(0, 10));
+  const b = parseISO(next.slice(0, 10));
+  if (!isValid(a) || !isValid(b)) return null;
+  const days = differenceInCalendarDays(b, a);
+  return days > 0 ? days : null;
+}
+
+const emptyTaxonomy: OrgTaxonomyApi = {
+  departments: [],
+  categories: [],
+  locations: [],
+};
+
+const ADD_NEW = "__tg_add_new__";
 
 function fromEquipment(item: AppEquipment): EquipmentPayload {
   const toDateInput = (v: string) => (v ? v.slice(0, 10) : "");
@@ -53,6 +78,70 @@ function fromEquipment(item: AppEquipment): EquipmentPayload {
   };
 }
 
+function TaxonomySelect({
+  id,
+  value,
+  options,
+  onChange,
+  emptyLabel,
+  kind,
+  onTaxonomyChange,
+  allowManage,
+}: {
+  id: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  emptyLabel: string;
+  kind: OrgTaxonomyKind;
+  onTaxonomyChange: (next: OrgTaxonomyApi) => void;
+  allowManage: boolean;
+}) {
+  const [adding, setAdding] = useState(false);
+  const merged =
+    value && !options.some((o) => o === value) ? [...options, value] : options;
+
+  const handleChange = async (raw: string) => {
+    if (raw !== ADD_NEW) {
+      onChange(raw);
+      return;
+    }
+    const label =
+      kind === "departments" ? "department" : kind === "categories" ? "category" : "location";
+    const entered = window.prompt(`New ${label} name`)?.trim();
+    if (!entered) return;
+    setAdding(true);
+    try {
+      const next = await addOrgTaxonomyTerm(kind, entered);
+      onTaxonomyChange(next);
+      onChange(entered);
+      toast.success(`Added ${label}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <select
+      id={id}
+      className="tg-select"
+      value={value}
+      disabled={adding}
+      onChange={(e) => void handleChange(e.target.value)}
+    >
+      <option value="">{emptyLabel}</option>
+      {merged.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt}
+        </option>
+      ))}
+      {allowManage ? <option value={ADD_NEW}>+ Add new…</option> : null}
+    </select>
+  );
+}
+
 export function EquipmentFormDialog({
   open,
   onOpenChange,
@@ -60,6 +149,7 @@ export function EquipmentFormDialog({
   initial,
   onSubmit,
   saving,
+  allowManageTaxonomy = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,19 +157,35 @@ export function EquipmentFormDialog({
   initial?: AppEquipment | null;
   onSubmit: (payload: EquipmentPayload) => Promise<void>;
   saving?: boolean;
+  /** QA / technician / admin can create terms from the form. */
+  allowManageTaxonomy?: boolean;
 }) {
   const [form, setForm] = useState<EquipmentPayload>(emptyForm);
   const [nameError, setNameError] = useState(false);
+  const [taxonomy, setTaxonomy] = useState<OrgTaxonomyApi>(emptyTaxonomy);
   const baseId = useId();
 
   useEffect(() => {
     if (!open) return;
     setForm(initial ? fromEquipment(initial) : { ...emptyForm });
     setNameError(false);
+    void getOrgTaxonomy()
+      .then(setTaxonomy)
+      .catch(() => setTaxonomy(emptyTaxonomy));
   }, [open, initial]);
 
   const set = <K extends keyof EquipmentPayload>(key: K, value: EquipmentPayload[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === "last_calibration" || key === "next_calibration") {
+        const computed = frequencyFromDates(
+          key === "last_calibration" ? String(value ?? "") : next.last_calibration,
+          key === "next_calibration" ? String(value ?? "") : next.next_calibration,
+        );
+        if (computed != null) next.frequency_days = computed;
+      }
+      return next;
+    });
     if (key === "name") setNameError(false);
   };
 
@@ -91,6 +197,14 @@ export function EquipmentFormDialog({
       toast.error("Equipment name is required");
       return;
     }
+    const computedFreq =
+      frequencyFromDates(form.last_calibration, form.next_calibration) ??
+      form.frequency_days ??
+      365;
+    if (form.last_calibration && form.next_calibration && computedFreq < 1) {
+      toast.error("Next calibration must be after last calibration");
+      return;
+    }
     await onSubmit({
       tag: form.tag ?? "",
       name: form.name.trim(),
@@ -100,18 +214,34 @@ export function EquipmentFormDialog({
       serial: form.serial ?? "",
       department: form.department ?? "",
       location: form.location ?? "",
-      status: form.status ?? "inactive",
+      status: form.status ?? "calibrated",
       last_calibration: form.last_calibration || null,
       next_calibration: form.next_calibration || null,
-      frequency_days: form.frequency_days ?? 365,
+      frequency_days: computedFreq,
       owner: form.owner ?? "",
       responsible_email: form.responsible_email || null,
     });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (
+          !next &&
+          typeof window !== "undefined" &&
+          sessionStorage.getItem("tg-tour-running") === "1" &&
+          document.body.classList.contains("tg-tour-form-expanded")
+        ) {
+          return;
+        }
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
+        data-tour={mode === "create" ? "equipment-create-dialog" : undefined}
+      >
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "New equipment" : "Edit equipment"}</DialogTitle>
           <DialogDescription>
@@ -130,17 +260,25 @@ export function EquipmentFormDialog({
                 required
                 aria-required
                 aria-invalid={nameError}
-                placeholder="Digital Micrometer"
               />
             </Field>
             <Field id={`${baseId}-tag`} label="Tag">
-              <Input id={`${baseId}-tag`} value={form.tag ?? ""} onChange={(e) => set("tag", e.target.value)} placeholder="MIC-001" />
+              <Input id={`${baseId}-tag`} value={form.tag ?? ""} onChange={(e) => set("tag", e.target.value)} />
             </Field>
             <Field id={`${baseId}-serial`} label="Serial">
               <Input id={`${baseId}-serial`} value={form.serial ?? ""} onChange={(e) => set("serial", e.target.value)} />
             </Field>
             <Field id={`${baseId}-category`} label="Category">
-              <Input id={`${baseId}-category`} value={form.category ?? ""} onChange={(e) => set("category", e.target.value)} />
+              <TaxonomySelect
+                id={`${baseId}-category`}
+                value={form.category ?? ""}
+                options={taxonomy.categories}
+                onChange={(v) => set("category", v)}
+                emptyLabel="Select category"
+                kind="categories"
+                onTaxonomyChange={setTaxonomy}
+                allowManage={allowManageTaxonomy}
+              />
             </Field>
             <Field id={`${baseId}-mfr`} label="Manufacturer">
               <Input id={`${baseId}-mfr`} value={form.manufacturer ?? ""} onChange={(e) => set("manufacturer", e.target.value)} />
@@ -149,10 +287,28 @@ export function EquipmentFormDialog({
               <Input id={`${baseId}-model`} value={form.model ?? ""} onChange={(e) => set("model", e.target.value)} />
             </Field>
             <Field id={`${baseId}-dept`} label="Department">
-              <Input id={`${baseId}-dept`} value={form.department ?? ""} onChange={(e) => set("department", e.target.value)} />
+              <TaxonomySelect
+                id={`${baseId}-dept`}
+                value={form.department ?? ""}
+                options={taxonomy.departments}
+                onChange={(v) => set("department", v)}
+                emptyLabel="Select department"
+                kind="departments"
+                onTaxonomyChange={setTaxonomy}
+                allowManage={allowManageTaxonomy}
+              />
             </Field>
             <Field id={`${baseId}-loc`} label="Location">
-              <Input id={`${baseId}-loc`} value={form.location ?? ""} onChange={(e) => set("location", e.target.value)} />
+              <TaxonomySelect
+                id={`${baseId}-loc`}
+                value={form.location ?? ""}
+                options={taxonomy.locations}
+                onChange={(v) => set("location", v)}
+                emptyLabel="Select location"
+                kind="locations"
+                onTaxonomyChange={setTaxonomy}
+                allowManage={allowManageTaxonomy}
+              />
             </Field>
             <Field id={`${baseId}-owner`} label="Owner">
               <Input id={`${baseId}-owner`} value={form.owner ?? ""} onChange={(e) => set("owner", e.target.value)} />
@@ -179,20 +335,39 @@ export function EquipmentFormDialog({
                 onChange={(v) => set("next_calibration", v)}
               />
             </Field>
-            <Field id={`${baseId}-freq`} label="Frequency (days)">
+            <Field
+              id={`${baseId}-freq`}
+              label="Frequency (days)"
+              error={
+                form.last_calibration &&
+                form.next_calibration &&
+                frequencyFromDates(form.last_calibration, form.next_calibration) == null
+                  ? "Next date must be after last date"
+                  : undefined
+              }
+            >
               <Input
                 id={`${baseId}-freq`}
                 type="number"
                 min={1}
-                value={form.frequency_days ?? 365}
-                onChange={(e) => set("frequency_days", Number(e.target.value) || 365)}
+                value={
+                  frequencyFromDates(form.last_calibration, form.next_calibration) ??
+                  form.frequency_days ??
+                  ""
+                }
+                readOnly
+                className="bg-muted/40"
+                title="Calculated from last and next calibration dates"
               />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Auto-calculated from last → next calibration
+              </p>
             </Field>
             <Field id={`${baseId}-status`} label="Status">
               <select
                 id={`${baseId}-status`}
                 className="tg-select"
-                value={form.status ?? "inactive"}
+                value={form.status ?? "calibrated"}
                 onChange={(e) => set("status", e.target.value as CalStatus)}
               >
                 <option value="calibrated">Calibrated</option>

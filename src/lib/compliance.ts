@@ -58,8 +58,8 @@ export const defaultUserProfile: UserProfile = {
   role: "admin",
   timezone: "UTC",
   locale: "en-US",
-  notifyEmail: true,
-  notifyInApp: true,
+  notifyEmail: false,
+  notifyInApp: false,
 };
 
 export function loadUserProfile(): UserProfile {
@@ -86,16 +86,7 @@ export function userInitials(profile: UserProfile) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function roleDisplayLabel(role: string) {
-  const map: Record<string, string> = {
-    platform_admin: "TrueGage Admin",
-    admin: "Admin",
-    qa: "QA",
-    technician: "Technician",
-    member: "Member",
-  };
-  return map[role] ?? role;
-}
+export { roleDisplayLabel } from "@/lib/roles";
 
 export function parseDate(value: string) {
   if (!value) return null;

@@ -1,5 +1,5 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Wrench,
@@ -8,7 +8,6 @@ import {
   BarChart3,
   Bell,
   Settings,
-  Search,
   Sun,
   Moon,
   LogOut,
@@ -18,9 +17,10 @@ import {
   PanelLeftOpen,
   User as UserIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { workspacePath } from "@/lib/workspace";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import {
   getMe,
   getOrgProfile,
@@ -45,16 +46,42 @@ import {
   userInitials,
   type UserProfile,
 } from "@/lib/compliance";
+import {
+  bindProductTourCallbacks,
+  getSavedTourStep,
+  isProductTourActive,
+  pathForTourStep,
+  startProductTour,
+  type TourRoute,
+} from "@/lib/product-tour";
+import { needsOnboarding, canManageEquipmentTaxonomy } from "@/lib/rbac";
+import { GlobalSearch } from "@/components/tg/global-search";
+import { OnboardingProfileDialog } from "@/components/tg/onboarding-profile-dialog";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/equipment", label: "Equipment", icon: Wrench },
-  { to: "/calibrations", label: "Calibrations", icon: CalendarClock },
-  { to: "/certificates", label: "Certificates", icon: FileCheck2 },
-  { to: "/reports", label: "Reports & Compliance", icon: BarChart3 },
-  { to: "/notifications", label: "Notifications", icon: Bell },
-  { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+type NavKey =
+  | "dashboard"
+  | "equipment"
+  | "calibrations"
+  | "certificates"
+  | "reports"
+  | "notifications"
+  | "settings";
+
+const nav: {
+  key: NavKey;
+  label: string;
+  icon: typeof LayoutDashboard;
+  exact?: boolean;
+  tour: string;
+}[] = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true, tour: "nav-dashboard" },
+  { key: "equipment", label: "Equipment", icon: Wrench, tour: "nav-equipment" },
+  { key: "calibrations", label: "Calibrations", icon: CalendarClock, tour: "nav-calibrations" },
+  { key: "certificates", label: "Certificates", icon: FileCheck2, tour: "nav-certificates" },
+  { key: "reports", label: "Reports & Compliance", icon: BarChart3, tour: "nav-reports" },
+  { key: "notifications", label: "Notifications", icon: Bell, tour: "nav-notifications" },
+  { key: "settings", label: "Settings", icon: Settings, tour: "nav-settings" },
+];
 
 const iconBtn =
   "tg-focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted";
@@ -74,22 +101,53 @@ function toUserProfile(u: AuthUser): UserProfile {
   };
 }
 
+function navHref(slug: string, key: NavKey): string {
+  switch (key) {
+    case "dashboard":
+      return workspacePath(slug);
+    case "equipment":
+      return workspacePath(slug, "equipment");
+    case "calibrations":
+      return workspacePath(slug, "calibrations");
+    case "certificates":
+      return workspacePath(slug, "certificates");
+    case "reports":
+      return workspacePath(slug, "reports");
+    case "notifications":
+      return workspacePath(slug, "notifications");
+    case "settings":
+      return workspacePath(slug, "settings");
+  }
+}
+
+
 export function AppShell({
   children,
   title,
   breadcrumbs,
   hidePageHeader,
+  autoCollapseSidebar,
 }: {
   children: ReactNode;
   title?: string;
   breadcrumbs?: { label: string; to?: string }[];
   hidePageHeader?: boolean;
+  /** When true, collapse the desktop sidebar on mount (e.g. Settings). */
+  autoCollapseSidebar?: boolean;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+  const params = useParams({ strict: false }) as { slug?: string };
+  const queryClient = useQueryClient();
   const { theme, toggle } = useTheme();
+  // Always start false so SSR HTML matches the first client paint (avoids hydration mismatch).
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const sidebarBeforeTour = useRef<boolean | null>(null);
+  const tourStarted = useRef(false);
+  const [tourPaused, setTourPaused] = useState(false);
+  const [tourRunning, setTourRunning] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -97,7 +155,20 @@ export function AppShell({
       return;
     }
     setAuthReady(true);
-  }, []);
+    if (autoCollapseSidebar) {
+      setCollapsed(true);
+    } else if (localStorage.getItem("tg-sidebar-collapsed") === "1") {
+      setCollapsed(true);
+    }
+    if (sessionStorage.getItem("tg-tour-paused") === "1") {
+      setTourPaused(true);
+    }
+  }, [autoCollapseSidebar]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    localStorage.setItem("tg-sidebar-collapsed", collapsed ? "1" : "0");
+  }, [collapsed, authReady]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -128,7 +199,13 @@ export function AppShell({
   });
 
   useEffect(() => {
-    const onProfile = () => void refetchMe();
+    const onProfile = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail;
+      if (detail && typeof detail === "object" && "id" in detail) {
+        queryClient.setQueryData(["me"], detail);
+      }
+      void refetchMe();
+    };
     const onOrg = () => void refetchOrg();
     window.addEventListener("tg-user-profile-updated", onProfile);
     window.addEventListener("tg-org-profile-updated", onOrg);
@@ -136,7 +213,7 @@ export function AppShell({
       window.removeEventListener("tg-user-profile-updated", onProfile);
       window.removeEventListener("tg-org-profile-updated", onOrg);
     };
-  }, [refetchMe, refetchOrg]);
+  }, [queryClient, refetchMe, refetchOrg]);
 
   const equipment = data?.items ?? [];
   const readiness = complianceScore(equipment);
@@ -150,7 +227,145 @@ export function AppShell({
   const initials = user ? userInitials(user) : "…";
   // Only show Settings after role is known — avoids flicker on page remounts
   const isAdmin = me?.role === "admin" || me?.role === "platform_admin";
-  const visibleNav = nav.filter((item) => item.to !== "/settings" || isAdmin);
+  const workspaceSlug = (params.slug || me?.tenant_slug || "").trim();
+  const visibleNav = nav.filter((item) => item.key !== "settings" || isAdmin);
+
+  const goTourRoute = async (to: TourRoute) => {
+    if (!workspaceSlug) return;
+    if (to === "calibrations") {
+      await navigate({ to: "/workspace/$slug/calibrations", params: { slug: workspaceSlug }, search: {} });
+      return;
+    }
+    if (to === "dashboard") {
+      await navigate({ to: "/workspace/$slug", params: { slug: workspaceSlug } });
+      return;
+    }
+    if (to === "equipment") {
+      await navigate({ to: "/workspace/$slug/equipment", params: { slug: workspaceSlug } });
+      return;
+    }
+    await navigate({ to: "/workspace/$slug/certificates", params: { slug: workspaceSlug } });
+  };
+
+  const needsProfileSetup =
+    !!me && needsOnboarding(me.role) && !me.profile_setup_at;
+  const needsTour =
+    !!me && needsOnboarding(me.role) && !!me.profile_setup_at && !me.product_tour_at;
+  const includeLists = canManageEquipmentTaxonomy(me?.role);
+
+  const tourShellCallbacks = () => ({
+    includeLists,
+    navigateTo: goTourRoute,
+    onExpandSidebar: () => setCollapsed(false),
+    onRestoreSidebar: () => {
+      if (sidebarBeforeTour.current !== null) {
+        setCollapsed(sidebarBeforeTour.current);
+        sidebarBeforeTour.current = null;
+      }
+    },
+    onPaused: () => {
+      tourStarted.current = false;
+      setTourRunning(false);
+      setTourPaused(true);
+      sessionStorage.removeItem("tg-tour-running");
+      sessionStorage.setItem("tg-tour-paused", "1");
+    },
+    onFinished: () => {
+      tourStarted.current = false;
+      setTourRunning(false);
+      setTourPaused(false);
+      sessionStorage.removeItem("tg-tour-running");
+      sessionStorage.removeItem("tg-tour-paused");
+      sessionStorage.removeItem("tg-tour-resume");
+      sessionStorage.removeItem("tg-tour-step");
+      void queryClient.setQueryData(["me"], (prev: AuthUser | undefined) =>
+        prev ? { ...prev, product_tour_at: new Date().toISOString() } : prev,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
+
+  // Keep tour callbacks alive across AppShell remounts (each page wraps its own shell)
+  useEffect(() => {
+    bindProductTourCallbacks(tourShellCallbacks());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, collapsed, includeLists, me?.role, workspaceSlug]);
+
+  const launchTour = async (opts?: { startAt?: number; fresh?: boolean }) => {
+    const startAt = opts?.fresh ? 0 : (opts?.startAt ?? getSavedTourStep());
+    const target = pathForTourStep(startAt, includeLists);
+
+    // Ensure we're on the right page before starting; remount will rebind & continue
+    if (opts?.fresh) {
+      sessionStorage.removeItem("tg-tour-step");
+    }
+
+    const onTarget =
+      (target === "dashboard" && /\/workspace\/[^/]+\/?$/.test(pathname)) ||
+      (target === "equipment" && pathname.includes("/equipment")) ||
+      (target === "calibrations" && pathname.includes("/calibrations")) ||
+      (target === "certificates" && pathname.includes("/certificates"));
+
+    if (!onTarget && workspaceSlug) {
+      sessionStorage.setItem("tg-tour-resume", "1");
+      sessionStorage.removeItem("tg-tour-paused");
+      if (!opts?.fresh) sessionStorage.setItem("tg-tour-step", String(startAt));
+      setTourPaused(false);
+      await goTourRoute(target);
+      return;
+    }
+
+    tourStarted.current = true;
+    setTourPaused(false);
+    setTourRunning(true);
+    sessionStorage.removeItem("tg-tour-paused");
+    sessionStorage.setItem("tg-tour-running", "1");
+    sidebarBeforeTour.current = collapsed;
+    await startProductTour({
+      ...tourShellCallbacks(),
+      startAt,
+    });
+  };
+
+  useEffect(() => {
+    if (!needsTour) return;
+
+    // Route change remounted AppShell but driver.js tour is still alive
+    if (isProductTourActive()) {
+      tourStarted.current = true;
+      setTourRunning(true);
+      setTourPaused(false);
+      bindProductTourCallbacks(tourShellCallbacks());
+      return;
+    }
+
+    if (tourStarted.current || tourRunning) return;
+
+    const resumeFlag = sessionStorage.getItem("tg-tour-resume") === "1";
+    const runningFlag = sessionStorage.getItem("tg-tour-running") === "1";
+    const pausedFlag =
+      tourPaused || sessionStorage.getItem("tg-tour-paused") === "1";
+
+    // Mid-tour navigation: shell remounted, driver may have been lost — resume step
+    if (runningFlag || resumeFlag) {
+      sessionStorage.removeItem("tg-tour-resume");
+      const fresh = sessionStorage.getItem("tg-tour-fresh") === "1";
+      if (fresh) sessionStorage.removeItem("tg-tour-fresh");
+      void launchTour(fresh ? { fresh: true } : { startAt: getSavedTourStep() });
+      return;
+    }
+
+    if (pausedFlag) {
+      if (!tourPaused) setTourPaused(true);
+      return;
+    }
+
+    void launchTour({ fresh: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsTour, pathname, tourPaused, tourRunning]);
+
+  // Do NOT destroy the tour on AppShell unmount — each page mounts its own shell.
+  // Pause/finish/skip handle teardown explicitly via product-tour module state.
 
   if (!authReady) {
     return (
@@ -173,16 +388,18 @@ export function AppShell({
   const navList = (opts: { collapsed?: boolean; onNavigate?: () => void }) => (
     <ul className="flex flex-col gap-0.5">
       {visibleNav.map((item) => {
+        const href = workspaceSlug ? navHref(workspaceSlug, item.key) : "#";
         const active =
-          "exact" in item && item.exact
-            ? pathname === item.to
-            : pathname === item.to || pathname.startsWith(item.to + "/");
+          item.exact
+            ? pathname === href || pathname === `${href}/`
+            : pathname === href || pathname.startsWith(href + "/");
         const Icon = item.icon;
         return (
-          <li key={item.to}>
+          <li key={item.key}>
             <Link
-              to={item.to}
+              to={href}
               onClick={opts.onNavigate}
+              data-tour={item.tour}
               className={cn(
                 "tg-focus-ring group relative flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
                 active
@@ -195,7 +412,7 @@ export function AppShell({
               )}
               <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
               {!opts.collapsed && <span className="truncate">{item.label}</span>}
-              {!opts.collapsed && item.to === "/notifications" && unread > 0 && (
+              {!opts.collapsed && item.key === "notifications" && unread > 0 && (
                 <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-white">
                   {unread}
                 </span>
@@ -245,6 +462,7 @@ export function AppShell({
           <button
             type="button"
             aria-label="Account menu"
+            data-tour="account-menu"
             className="tg-focus-ring flex w-full items-center gap-2 rounded-md p-1.5 text-left hover:bg-sidebar-accent/60"
           >
             <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
@@ -263,13 +481,17 @@ export function AppShell({
           <DropdownMenuLabel>{displayName}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link to="/profile">
+            <Link
+              to={workspaceSlug ? workspacePath(workspaceSlug, "profile") : "/auth/login"}
+            >
               <UserIcon className="mr-2 h-4 w-4" /> Profile
             </Link>
           </DropdownMenuItem>
           {isAdmin && (
             <DropdownMenuItem asChild>
-              <Link to="/settings">
+              <Link
+                to={workspaceSlug ? workspacePath(workspaceSlug, "settings") : "/auth/login"}
+              >
                 <Settings className="mr-2 h-4 w-4" /> Settings
               </Link>
             </DropdownMenuItem>
@@ -294,14 +516,23 @@ export function AppShell({
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">
       <aside
+        data-tour="nav-sidebar"
         className={cn(
           "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 md:flex",
-          collapsed ? "w-[68px]" : "w-[240px]",
+          collapsed ? "w-[68px] cursor-pointer" : "w-[240px]",
         )}
+        title={collapsed ? "Click empty space to expand sidebar" : undefined}
+        onClick={(e) => {
+          if (!collapsed) return;
+          const el = e.target as HTMLElement | null;
+          // Keep icon actions working; only empty chrome expands the rail
+          if (el?.closest("a, button, [role='menuitem'], input, select, textarea")) return;
+          setCollapsed(false);
+        }}
       >
         <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-3">
           <Link
-            to="/"
+            to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
             aria-label="Go to dashboard"
             className="tg-focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-sm"
           >
@@ -309,7 +540,7 @@ export function AppShell({
           </Link>
           {!collapsed && (
             <Link
-              to="/"
+              to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
               aria-label={`Workspace ${orgName} — Dashboard`}
               className="tg-focus-ring group flex min-w-0 flex-1 items-center rounded-md px-1.5 py-1 text-left hover:bg-sidebar-accent/60"
             >
@@ -364,6 +595,7 @@ export function AppShell({
               <button
                 type="button"
                 aria-label="Account menu"
+                data-tour="account-menu"
                 className="tg-focus-ring flex w-full items-center gap-2 rounded-md p-1.5 text-left hover:bg-sidebar-accent/60"
               >
                 <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
@@ -382,13 +614,17 @@ export function AppShell({
               <DropdownMenuLabel>{displayName}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link to="/profile">
+                <Link
+                  to={workspaceSlug ? workspacePath(workspaceSlug, "profile") : "/auth/login"}
+                >
                   <UserIcon className="mr-2 h-4 w-4" /> Profile
                 </Link>
               </DropdownMenuItem>
               {isAdmin && (
                 <DropdownMenuItem asChild>
-                  <Link to="/settings">
+                  <Link
+                    to={workspaceSlug ? workspacePath(workspaceSlug, "settings") : "/auth/login"}
+                  >
                     <Settings className="mr-2 h-4 w-4" /> Settings
                   </Link>
                 </DropdownMenuItem>
@@ -464,7 +700,10 @@ export function AppShell({
           </button>
 
           <nav className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
-            <Link to="/" className="tg-focus-ring rounded-sm font-medium text-foreground hover:text-primary">
+            <Link
+              to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
+              className="tg-focus-ring rounded-sm font-medium text-foreground hover:text-primary"
+            >
               TrueGage
             </Link>
             {crumbTrail.map((b, i) => (
@@ -481,23 +720,46 @@ export function AppShell({
             ))}
           </nav>
 
-          <div className="flex min-w-0 flex-1 items-center justify-center">
-            <div
-              className="hidden w-full max-w-md items-center gap-2 rounded-md border border-dashed border-border bg-surface/60 px-2.5 py-1.5 text-sm text-muted-foreground md:flex"
-              title="Global search coming soon"
-            >
-              <Search className="h-3.5 w-3.5" />
-              <span className="flex-1 text-left">Search coming soon</span>
-            </div>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1 md:justify-center">
+            <GlobalSearch
+              workspaceSlug={workspaceSlug}
+              storageEnabled={Boolean(me?.storage_enabled)}
+              role={me?.role}
+            />
           </div>
 
-          <Link to="/notifications" className={cn(iconBtn, "relative")} aria-label="Notifications">
+          <Link
+            to={workspaceSlug ? workspacePath(workspaceSlug, "notifications") : "/auth/login"}
+            className={cn(iconBtn, "relative")}
+            aria-label="Notifications"
+          >
             <Bell className="h-4 w-4" />
             {unread > 0 && (
               <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-destructive ring-2 ring-background" />
             )}
           </Link>
         </header>
+
+        {needsTour && !tourRunning && tourPaused ? (
+          <div className="border-b border-[color:var(--color-primary)]/30 bg-[color:var(--color-primary)]/10 px-4 py-3 md:px-8">
+            <div className="mx-auto flex max-w-xl flex-col items-center gap-2 text-center sm:flex-row sm:justify-center sm:gap-4 sm:text-left">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">Product tour paused</p>
+                <p className="text-xs text-muted-foreground">
+                  Pick up where you left off — takes about a minute.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="tg-tour-resume-btn shrink-0 shadow-md"
+                onClick={() => void launchTour({ startAt: getSavedTourStep() })}
+              >
+                Continue product tour
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {!hidePageHeader && title && (
           <div className="border-b border-border bg-surface/40 px-4 py-4 md:px-8 md:py-5">
@@ -509,6 +771,18 @@ export function AppShell({
 
         <main className="tg-page-enter flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
+
+      {me && needsProfileSetup ? (
+        <OnboardingProfileDialog
+          open
+          user={me}
+          onCompleted={(updated) => {
+            queryClient.setQueryData(["me"], updated);
+            window.dispatchEvent(new CustomEvent("tg-user-profile-updated"));
+            tourStarted.current = false;
+          }}
+        />
+      ) : null}
     </div>
   );
 }

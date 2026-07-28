@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import smtplib
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Optional
 
-from app.models import AppSettings
+from app.models import AppSettings, PlatformSettings
 from app.security import decrypt_secret
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 class EmailError(Exception):
@@ -130,6 +134,14 @@ class OverdueEquipmentRow:
     days_overdue: int
 
 
+@dataclass
+class ReminderEquipmentRow:
+    name: str
+    tag: str
+    due_date: str
+    days_until: int
+
+
 def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> None:
     name = to_name.strip() or "there"
     safe_name = _escape(name)
@@ -218,6 +230,120 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
               <div style="font-family:{font_sans};font-size:12px;font-weight:500;color:#64748b;">
                 TrueGage · Manufacturing calibration monitoring
               </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+    msg = build_message(
+        config=config,
+        to_email=to_email,
+        to_name=to_name,
+        subject=subject,
+        text_body=text,
+        html_body=html,
+    )
+    send_message(config, msg)
+
+
+def send_login_credentials_email(
+    config: SmtpConfig,
+    *,
+    to_email: str,
+    to_name: str,
+    company_name: str,
+    temp_password: str,
+    login_url: str,
+    role_label: str = "",
+) -> None:
+    """Org admin → new login user credentials (tenant SMTP)."""
+    name = (to_name or "").strip() or "there"
+    company = (company_name or "").strip() or "your company"
+    safe_name = _escape(name)
+    safe_company = _escape(company)
+    safe_email = _escape(to_email)
+    safe_login = _escape(login_url)
+    safe_role = _escape(role_label) if role_label else ""
+    subject = f"Your TrueGage login — {company}"
+
+    text = (
+        f"Hi {name},\n\n"
+        f"An administrator at {company} created a TrueGage login for you.\n\n"
+        f"Sign in: {login_url}\n"
+        f"Email: {to_email}\n"
+        f"Temporary password: {temp_password}\n"
+    )
+    if role_label:
+        text += f"Role: {role_label}\n"
+    text += (
+        "\nAfter you sign in, open Profile → Security to change your password "
+        "(use the temporary password as your current password).\n\n"
+        "— TrueGage\n"
+    )
+
+    role_html = (
+        f'<div style="margin-top:8px;font-size:13px;color:#94a3b8;">Role: {safe_role}</div>'
+        if safe_role
+        else ""
+    )
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrueGage login</title>
+{FONT_LINKS}
+</head>
+<body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0b1220;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#111827;border:1px solid #1f2a3c;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
+              <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
+                TrueGage · Workspace access
+              </div>
+              <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
+                Your login is ready
+              </div>
+              <div style="font-family:{FONT_SANS};font-size:14px;color:rgba(255,255,255,0.86);margin-top:8px;">
+                {safe_company}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#e5e7eb;">Hi {safe_name},</p>
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#cbd5e1;">
+                Use the credentials below to sign in. After login, open
+                <strong style="color:#e5e7eb;"> Profile → Security </strong>
+                to set a new password.
+              </p>
+              {role_html}
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0;background:#0b1220;border:1px solid #243044;border-radius:10px;">
+                <tr>
+                  <td style="padding:16px 18px;font-family:{FONT_MONO};font-size:13px;color:#e2e8f0;line-height:1.7;">
+                    Email: {safe_email}<br/>
+                    Temporary password: {_escape(temp_password)}
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-radius:10px;background:#0f766e;">
+                    <a href="{safe_login}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      Open TrueGage
+                    </a>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
         </table>
@@ -354,6 +480,427 @@ def send_overdue_alert_email(
               <div style="font-family:{FONT_SANS};font-size:12px;font-weight:500;color:#64748b;">
                 TrueGage · Manufacturing calibration monitoring
               </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+    msg = build_message(
+        config=config,
+        to_email=to_email,
+        to_name=to_name,
+        subject=subject,
+        text_body=text,
+        html_body=html,
+    )
+    send_message(config, msg)
+
+
+def send_due_reminder_email(
+    config: SmtpConfig,
+    *,
+    to_email: str,
+    to_name: str,
+    window_label: str,
+    items: list[ReminderEquipmentRow],
+    cta_url: str,
+) -> None:
+    if not items:
+        raise EmailError("No equipment to include in the reminder email")
+
+    name = to_name.strip() or "there"
+    safe_name = _escape(name)
+    safe_cta = _escape(cta_url)
+    safe_window = _escape(window_label)
+    count = len(items)
+    subject = f"TrueGage — {count} calibration{'s' if count != 1 else ''} due ({window_label})"
+
+    lines = [
+        f"Hi {name},",
+        "",
+        f"{count} equipment item{'s are' if count != 1 else ' is'} approaching calibration ({window_label}):",
+        "",
+    ]
+    for row in items:
+        lines.append(f"• {row.name} ({row.tag}) — due {row.due_date} ({row.days_until}d)")
+    lines.extend(
+        [
+            "",
+            "Please schedule verification in advance.",
+            "",
+            f"Open TrueGage: {cta_url}",
+            "",
+            "— TrueGage Metrology",
+        ]
+    )
+    text = "\n".join(lines)
+
+    rows_html = ""
+    for row in items:
+        rows_html += f"""\
+<tr>
+  <td style="padding:12px 14px;border-bottom:1px solid #243044;font-family:{FONT_SANS};">
+    <div style="font-family:{FONT_SANS};font-size:14px;font-weight:600;color:#f8fafc;">{_escape(row.name)}</div>
+    <div style="font-family:{FONT_MONO};font-size:11px;color:#94a3b8;margin-top:4px;">{_escape(row.tag)}</div>
+  </td>
+  <td style="padding:12px 14px;border-bottom:1px solid #243044;font-family:{FONT_MONO};font-size:13px;color:#cbd5e1;white-space:nowrap;">
+    {_escape(row.due_date)}
+  </td>
+  <td style="padding:12px 14px;border-bottom:1px solid #243044;text-align:right;">
+    <span style="display:inline-block;font-family:{FONT_SANS};font-size:11px;font-weight:700;color:#fde68a;background:rgba(245,158,11,0.18);border-radius:6px;padding:4px 8px;">
+      {row.days_until}d
+    </span>
+  </td>
+</tr>
+"""
+
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calibration reminder</title>
+{FONT_LINKS}
+</head>
+<body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0b1220;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#111827;border:1px solid #1f2a3c;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
+              <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
+                TrueGage · Due soon
+              </div>
+              <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
+                Calibrations due ({safe_window})
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#e5e7eb;">Hi {safe_name},</p>
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#cbd5e1;">
+                {count} item{'s are' if count != 1 else ' is'} approaching calibration.
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #243044;border-radius:10px;overflow:hidden;">
+                {rows_html}
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
+                <tr>
+                  <td style="border-radius:10px;background:#0f766e;">
+                    <a href="{safe_cta}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      View equipment
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+    msg = build_message(
+        config=config,
+        to_email=to_email,
+        to_name=to_name,
+        subject=subject,
+        text_body=text,
+        html_body=html,
+    )
+    send_message(config, msg)
+
+
+def send_weekly_digest_email(
+    config: SmtpConfig,
+    *,
+    to_email: str,
+    to_name: str,
+    week_label: str,
+    items: list[ReminderEquipmentRow],
+    cta_url: str,
+) -> None:
+    if not items:
+        raise EmailError("No equipment to include in the weekly digest")
+
+    name = to_name.strip() or "there"
+    safe_name = _escape(name)
+    safe_cta = _escape(cta_url)
+    safe_week = _escape(week_label)
+    count = len(items)
+    subject = f"TrueGage — Weekly digest ({week_label}): {count} upcoming"
+
+    lines = [
+        f"Hi {name},",
+        "",
+        f"Weekly calibration digest for {week_label} — {count} item{'s' if count != 1 else ''} due in 7–30 days:",
+        "",
+    ]
+    for row in items:
+        lines.append(f"• {row.name} ({row.tag}) — due {row.due_date} ({row.days_until}d)")
+    lines.extend(["", f"Open TrueGage: {cta_url}", "", "— TrueGage Metrology"])
+    text = "\n".join(lines)
+
+    rows_html = ""
+    for row in items:
+        rows_html += f"""\
+<tr>
+  <td style="padding:12px 14px;border-bottom:1px solid #243044;">
+    <div style="font-size:14px;font-weight:600;color:#f8fafc;">{_escape(row.name)}</div>
+    <div style="font-family:{FONT_MONO};font-size:11px;color:#94a3b8;margin-top:4px;">{_escape(row.tag)}</div>
+  </td>
+  <td style="padding:12px 14px;border-bottom:1px solid #243044;font-family:{FONT_MONO};font-size:13px;color:#cbd5e1;">{_escape(row.due_date)}</td>
+  <td style="padding:12px 14px;border-bottom:1px solid #243044;text-align:right;color:#94a3b8;">{row.days_until}d</td>
+</tr>
+"""
+
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weekly digest</title>
+{FONT_LINKS}
+</head>
+<body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0b1220;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#111827;border:1px solid #1f2a3c;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
+              <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
+                TrueGage · Weekly digest
+              </div>
+              <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
+                Upcoming calibrations · {safe_week}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#e5e7eb;">Hi {safe_name},</p>
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#cbd5e1;">
+                {count} item{'s are' if count != 1 else ' is'} due in the next 7–30 days.
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #243044;border-radius:10px;overflow:hidden;">
+                {rows_html}
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:22px;">
+                <tr>
+                  <td style="border-radius:10px;background:#0f766e;">
+                    <a href="{safe_cta}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      Open TrueGage
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+    msg = build_message(
+        config=config,
+        to_email=to_email,
+        to_name=to_name,
+        subject=subject,
+        text_body=text,
+        html_body=html,
+    )
+    send_message(config, msg)
+
+
+def _platform_settings_row(db: Session) -> PlatformSettings | None:
+    """Load platform settings; tolerate missing migration (table not created yet)."""
+    try:
+        return db.get(PlatformSettings, 1)
+    except Exception:  # noqa: BLE001 — undefined table / stale schema during rollouts
+        db.rollback()
+        logger.warning("platform_settings table unavailable; falling back to env SMTP", exc_info=True)
+        return None
+
+
+def load_system_smtp_config(db: Session | None = None) -> SmtpConfig:
+    """Resolve platform SMTP: DB (staff console) overrides env SYSTEM_SMTP_*."""
+    from app.config import get_settings
+
+    if db is not None:
+        row = _platform_settings_row(db)
+        if (
+            row is not None
+            and (row.smtp_host or "").strip()
+            and (row.smtp_from_email or "").strip()
+            and row.smtp_password_encrypted
+        ):
+            try:
+                password = decrypt_secret(row.smtp_password_encrypted)
+            except Exception as exc:
+                raise EmailError("Could not decrypt platform SMTP password") from exc
+            return SmtpConfig(
+                host=row.smtp_host.strip(),
+                port=int(row.smtp_port or 587),
+                username=(row.smtp_username or "").strip() or None,
+                password=password,
+                use_tls=bool(row.smtp_use_tls),
+                from_email=row.smtp_from_email.strip(),
+                from_name=(row.smtp_from_name or "TrueGage").strip() or "TrueGage",
+            )
+
+    s = get_settings()
+    if not s.system_smtp_ready:
+        raise EmailError(
+            "Platform SMTP is not configured. Set it in Staff Console → Email, "
+            "or via SYSTEM_SMTP_HOST / SYSTEM_SMTP_FROM_EMAIL / SYSTEM_SMTP_PASSWORD."
+        )
+    return SmtpConfig(
+        host=s.system_smtp_host.strip(),
+        port=int(s.system_smtp_port or 587),
+        username=(s.system_smtp_username or "").strip() or None,
+        password=s.system_smtp_password,
+        use_tls=bool(s.system_smtp_use_tls),
+        from_email=s.system_smtp_from_email.strip(),
+        from_name=(s.system_smtp_from_name or "TrueGage").strip() or "TrueGage",
+    )
+
+
+def is_system_smtp_ready(db: Session | None = None) -> bool:
+    from app.config import get_settings
+
+    if db is not None:
+        row = _platform_settings_row(db)
+        if (
+            row is not None
+            and (row.smtp_host or "").strip()
+            and (row.smtp_from_email or "").strip()
+            and bool(row.smtp_password_encrypted)
+        ):
+            return True
+    return get_settings().system_smtp_ready
+
+
+def get_or_create_platform_settings(db: Session) -> PlatformSettings:
+    row = _platform_settings_row(db)
+    if row is None:
+        row = PlatformSettings(id=1)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def platform_smtp_configured(row: PlatformSettings) -> bool:
+    return bool(
+        (row.smtp_host or "").strip()
+        and (row.smtp_from_email or "").strip()
+        and row.smtp_password_encrypted
+    )
+
+
+def send_company_welcome_email(
+    *,
+    to_email: str,
+    to_name: str,
+    company_name: str,
+    temp_password: str,
+    login_url: str,
+    db: Session | None = None,
+) -> None:
+    """TrueGage → new company admin welcome / credentials email."""
+    config = load_system_smtp_config(db)
+    name = (to_name or "").strip() or "there"
+    company = (company_name or "").strip() or "your company"
+    safe_name = _escape(name)
+    safe_company = _escape(company)
+    safe_email = _escape(to_email)
+    safe_login = _escape(login_url)
+    subject = f"Welcome to TrueGage — {company} workspace is ready"
+
+    text = (
+        f"Hi {name},\n\n"
+        f"TrueGage has provisioned a calibration workspace for {company}.\n\n"
+        f"Sign in: {login_url}\n"
+        f"Email: {to_email}\n"
+        f"Temporary password: {temp_password}\n\n"
+        "After you sign in, open Profile → Security to change your password "
+        "(use the temporary password as your current password).\n\n"
+        "— TrueGage Staff\n"
+    )
+
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Welcome to TrueGage</title>
+{FONT_LINKS}
+</head>
+<body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0b1220;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#111827;border:1px solid #1f2a3c;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
+              <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
+                TrueGage · Workspace onboarding
+              </div>
+              <div style="font-family:{FONT_DISPLAY};font-size:24px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
+                Your company workspace is ready
+              </div>
+              <div style="font-family:{FONT_SANS};font-size:14px;color:rgba(255,255,255,0.86);margin-top:8px;">
+                {safe_company}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#e5e7eb;">Hi {safe_name},</p>
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#cbd5e1;">
+                The TrueGage team has created an administrator account for your calibration workspace.
+                Use the credentials below for your first sign-in, then open
+                <strong style="color:#e5e7eb;"> Profile → Security </strong>
+                to set a new password.
+              </p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0;background:#0b1220;border:1px solid #243044;border-radius:10px;">
+                <tr>
+                  <td style="padding:16px 18px;font-family:{FONT_MONO};font-size:13px;color:#e2e8f0;line-height:1.7;">
+                    Email: {safe_email}<br/>
+                    Temporary password: {_escape(temp_password)}
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-radius:10px;background:#0f766e;">
+                    <a href="{safe_login}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      Open TrueGage
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="border-top:1px solid #1f2a3c;padding:16px 28px 22px;background:#0d1422;">
+              <div style="font-size:12px;color:#64748b;">TrueGage Staff · Onboarding</div>
             </td>
           </tr>
         </table>

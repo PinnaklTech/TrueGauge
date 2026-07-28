@@ -1,8 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.accounts import get_or_create_settings, log_email_send, notify_email_batch
@@ -10,18 +10,28 @@ from app.config import get_settings
 from app.database import get_db
 from app.deps import TenantContext, get_tenant_context, is_org_admin_role, require_admin, require_writer
 from app.models import (
+    AuditEvent,
     CalibrationRecord,
+    Certificate,
     EquipmentCache,
     NotificationRecipient,
+    Tenant,
+    User,
     new_calibration_id,
+    new_certificate_id,
     new_public_id,
 )
 from app.security import client_safe_error, decrypt_secret, encrypt_secret
 from app.ssrf import validate_public_https_url, validate_smtp_host
 from app.schemas import (
+    AuditEventListOut,
+    AuditEventOut,
     CalibrationCreate,
     CalibrationListOut,
     CalibrationOut,
+    CertificateListOut,
+    CertificateOut,
+    CertificateViewUrlOut,
     EquipmentCreate,
     EquipmentListOut,
     EquipmentOut,
@@ -43,6 +53,8 @@ from app.schemas import (
     TeamMemberOut,
     TeamMemberUpdate,
 )
+from app.services.audit import record_audit_event
+from app.services.reports import ReportFormat, ReportType, make_report
 from app.services.email_service import (
     EmailError,
     OverdueEquipmentRow,
@@ -58,6 +70,8 @@ from app.services.equipment_sync import (
     sync_equipment_from_odoo,
 )
 from app.services.odoo_client import OdooClient, OdooError
+from app.services import r2_storage
+from app.services.storage_quota import assert_storage_quota, require_tenant_storage
 
 router = APIRouter()
 
@@ -69,6 +83,43 @@ def _parse_optional_date(value: Optional[str]) -> Optional[date]:
         return date.fromisoformat(value[:10])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid date: {value}") from exc
+
+
+def _frequency_from_dates(last_cal: Optional[date], next_cal: Optional[date]) -> Optional[int]:
+    if last_cal is None or next_cal is None:
+        return None
+    days = (next_cal - last_cal).days
+    return days if days > 0 else None
+
+
+def audit_to_out(row: AuditEvent) -> AuditEventOut:
+    return AuditEventOut(
+        id=row.public_id,
+        user_name=row.user_name or "User",
+        action=row.action,
+        target_type=row.target_type or "",
+        target_id=row.target_id,
+        target_name=row.target_name or "",
+        detail=row.detail or "",
+        timestamp=row.created_at,
+    )
+
+
+@router.get("/audit", response_model=AuditEventListOut)
+def list_audit_events(
+    limit: int = 40,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> AuditEventListOut:
+    capped = max(1, min(limit, 100))
+    rows = (
+        db.query(AuditEvent)
+        .filter(AuditEvent.tenant_id == ctx.tenant_id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(capped)
+        .all()
+    )
+    return AuditEventListOut(items=[audit_to_out(r) for r in rows], total=len(rows))
 
 
 def equipment_to_out(row: EquipmentCache) -> EquipmentOut:
@@ -218,6 +269,19 @@ def sync_odoo_equipment(
         validate_public_https_url(row.odoo_url, field_name="Odoo URL")
     try:
         result = sync_equipment_from_odoo(db, row)
+        record_audit_event(
+            db,
+            tenant_id=ctx.tenant_id,
+            user=ctx.user,
+            action="odoo.synced",
+            target_type="integration",
+            target_name="Odoo",
+            detail=(
+                f"Imported {result['imported']}, updated {result.get('updated', 0)}, "
+                f"skipped {result['skipped']}"
+            ),
+        )
+        db.commit()
         return SyncResult(
             ok=True,
             imported=result["imported"],
@@ -280,6 +344,12 @@ def create_equipment(
     if body.status == "inactive" and next_cal is not None:
         status = compute_status(next_cal)  # type: ignore[assignment]
 
+    frequency = _frequency_from_dates(last_cal, next_cal)
+    if last_cal is not None and next_cal is not None and frequency is None:
+        raise HTTPException(status_code=400, detail="Next calibration must be after last calibration")
+    if frequency is None:
+        frequency = body.frequency_days if body.frequency_days > 0 else 365
+
     tag = body.tag.strip() or body.serial.strip() or body.name.strip()[:32]
     row = EquipmentCache(
         tenant_id=ctx.tenant_id,
@@ -297,13 +367,23 @@ def create_equipment(
         status=status,
         last_calibration=last_cal,
         next_calibration=next_cal,
-        frequency_days=body.frequency_days,
+        frequency_days=frequency,
         owner=body.owner.strip(),
         responsible_email=body.responsible_email,
         raw_payload=None,
         synced_at=datetime.now(timezone.utc),
     )
     db.add(row)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="equipment.created",
+        target_type="equipment",
+        target_id=row.public_id,
+        target_name=row.name or row.tag or row.public_id,
+        detail=f"Status {row.status}",
+    )
     db.commit()
     db.refresh(row)
     return equipment_to_out(row)
@@ -339,11 +419,27 @@ def update_equipment(
             value = value.strip()
         setattr(row, key, value)
 
+    computed_freq = _frequency_from_dates(row.last_calibration, row.next_calibration)
+    if row.last_calibration is not None and row.next_calibration is not None and computed_freq is None:
+        raise HTTPException(status_code=400, detail="Next calibration must be after last calibration")
+    if computed_freq is not None:
+        row.frequency_days = computed_freq
+
     # Only derive status from due date when the client did not send an explicit status
     if not status_explicit:
         row.status = compute_status(row.next_calibration)
 
     row.synced_at = datetime.now(timezone.utc)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="equipment.updated",
+        target_type="equipment",
+        target_id=row.public_id,
+        target_name=row.name or row.tag or row.public_id,
+        detail=f"Status {row.status}",
+    )
     db.commit()
     db.refresh(row)
     return equipment_to_out(row)
@@ -353,9 +449,18 @@ def update_equipment(
 def delete_equipment(
     equipment_id: str,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(require_admin),
+    ctx: TenantContext = Depends(require_writer),
 ) -> Response:
     row = find_equipment(db, equipment_id, ctx.tenant_id)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="equipment.deleted",
+        target_type="equipment",
+        target_id=row.public_id,
+        target_name=row.name or row.tag or row.public_id,
+    )
     db.delete(row)
     db.commit()
     return Response(status_code=204)
@@ -466,6 +571,16 @@ def create_calibration(
             eq.status = compute_status(eq.next_calibration)
         eq.synced_at = datetime.now(timezone.utc)
 
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="calibration.logged",
+        target_type="equipment",
+        target_id=eq.public_id,
+        target_name=eq.name or eq.tag or eq.public_id,
+        detail=f"Result {body.result} · {body.type}",
+    )
     db.commit()
     db.refresh(record)
     return calibration_to_out(record)
@@ -484,11 +599,285 @@ def get_calibration(
 def delete_calibration(
     calibration_id: str,
     db: Session = Depends(get_db),
-    ctx: TenantContext = Depends(require_admin),
+    ctx: TenantContext = Depends(require_writer),
 ) -> Response:
     row = find_calibration(db, calibration_id, ctx.tenant_id)
+    eq = db.get(EquipmentCache, row.equipment_id)
+    target_name = ""
+    target_id = None
+    if eq is not None:
+        target_name = eq.name or eq.tag or eq.public_id
+        target_id = eq.public_id
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="calibration.deleted",
+        target_type="equipment",
+        target_id=target_id,
+        target_name=target_name or row.public_id,
+        detail=f"Calibration {row.public_id}",
+    )
     db.delete(row)
     db.commit()
+    return Response(status_code=204)
+
+
+def _certificate_to_out(row: Certificate, eq: EquipmentCache | None = None, uploader: User | None = None) -> CertificateOut:
+    equipment = eq or row.equipment
+    cal = row.calibration
+    return CertificateOut(
+        id=row.public_id,
+        equipment_id=equipment.public_id if equipment else "",
+        equipment_tag=(equipment.tag if equipment else "") or "",
+        equipment_name=(equipment.name if equipment else "") or "",
+        calibration_id=cal.public_id if cal else None,
+        file_name=row.file_name,
+        content_type=row.content_type or r2_storage.PDF_CONTENT_TYPE,
+        size_bytes=int(row.size_bytes or 0),
+        sha256=row.sha256 or "",
+        status=row.status,
+        uploaded_by=(uploader.full_name or uploader.email) if uploader else None,
+        created_at=row.created_at,
+    )
+
+
+def find_certificate(db: Session, certificate_id: str, tenant_id: int) -> Certificate:
+    row = (
+        db.query(Certificate)
+        .filter(Certificate.public_id == certificate_id, Certificate.tenant_id == tenant_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    return row
+
+
+@router.post("/certificates/upload", response_model=CertificateOut)
+async def upload_certificate(
+    equipment_id: str = Form(...),
+    calibration_id: str | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> CertificateOut:
+    """Accept PDF via API and store in R2 (avoids browser CORS to R2)."""
+    settings = get_settings()
+    tenant = require_tenant_storage(db.get(Tenant, ctx.tenant_id))
+    r2_storage.require_r2(settings)
+
+    raw_name = (file.filename or "certificate.pdf").strip() or "certificate.pdf"
+    # Strip path segments from browser-provided names
+    raw_name = raw_name.replace("\\", "/").split("/")[-1]
+    body = await file.read()
+    size = len(body)
+    file_name = r2_storage.validate_pdf_upload(raw_name, size, settings.certificate_max_bytes)
+    assert_storage_quota(db, tenant_id=tenant.id, additional_bytes=size, settings=settings)
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in {
+        r2_storage.PDF_CONTENT_TYPE,
+        "application/x-pdf",
+        "binary/octet-stream",
+        "application/octet-stream",
+        "",
+    }:
+        raise HTTPException(status_code=400, detail="Uploaded file must be a PDF")
+
+    # Light magic-byte check
+    if not body.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a PDF")
+
+    eq = find_equipment(db, equipment_id, ctx.tenant_id)
+    calibration_pk: int | None = None
+    if calibration_id:
+        cal = find_calibration(db, calibration_id, ctx.tenant_id)
+        if cal.equipment_id != eq.id:
+            raise HTTPException(status_code=400, detail="Calibration does not belong to this equipment")
+        calibration_pk = cal.id
+
+    object_key = r2_storage.build_object_key(
+        tenant_id=ctx.tenant_id,
+        equipment_public_id=eq.public_id,
+    )
+    put_meta = r2_storage.put_bytes(
+        tenant_id=ctx.tenant_id,
+        object_key=object_key,
+        body=body,
+        content_type=r2_storage.PDF_CONTENT_TYPE,
+        settings=settings,
+    )
+    etag = str(put_meta.get("ETag") or "").replace('"', "").strip()
+
+    row = Certificate(
+        tenant_id=ctx.tenant_id,
+        public_id=new_certificate_id(),
+        equipment_id=eq.id,
+        calibration_id=calibration_pk,
+        object_key=object_key,
+        file_name=file_name,
+        content_type=r2_storage.PDF_CONTENT_TYPE,
+        size_bytes=size,
+        sha256=etag[:64] if etag else "",
+        status="ready",
+        uploaded_by_user_id=ctx.user.id,
+    )
+    db.add(row)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="certificate.uploaded",
+        target_type="equipment",
+        target_id=eq.public_id,
+        target_name=(eq.name or eq.tag or eq.public_id),
+        detail=f"Certificate {row.public_id} · {row.file_name} · {size} bytes",
+    )
+    db.commit()
+    db.refresh(row)
+    return _certificate_to_out(row, eq, ctx.user)
+
+
+@router.get("/certificates", response_model=CertificateListOut)
+def list_certificates(
+    q: str | None = None,
+    equipment_id: str | None = None,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> CertificateListOut:
+    require_tenant_storage(db.get(Tenant, ctx.tenant_id))
+    query = (
+        db.query(Certificate)
+        .join(EquipmentCache, Certificate.equipment_id == EquipmentCache.id)
+        .filter(Certificate.tenant_id == ctx.tenant_id, Certificate.status == "ready")
+    )
+    if equipment_id:
+        eq = find_equipment(db, equipment_id, ctx.tenant_id)
+        query = query.filter(Certificate.equipment_id == eq.id)
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        query = query.filter(
+            or_(
+                Certificate.file_name.ilike(like),
+                EquipmentCache.name.ilike(like),
+                EquipmentCache.tag.ilike(like),
+            )
+        )
+    rows = query.order_by(Certificate.created_at.desc(), Certificate.id.desc()).all()
+    user_ids = {r.uploaded_by_user_id for r in rows if r.uploaded_by_user_id}
+    users = {
+        u.id: u
+        for u in db.query(User).filter(User.id.in_(user_ids)).all()
+    } if user_ids else {}
+    items = [
+        _certificate_to_out(r, r.equipment, users.get(r.uploaded_by_user_id) if r.uploaded_by_user_id else None)
+        for r in rows
+    ]
+    return CertificateListOut(items=items, total=len(items))
+
+
+@router.get("/equipment/{equipment_id}/certificates", response_model=CertificateListOut)
+def list_equipment_certificates(
+    equipment_id: str,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> CertificateListOut:
+    return list_certificates(q=None, equipment_id=equipment_id, db=db, ctx=ctx)
+
+
+@router.get("/certificates/{certificate_id}", response_model=CertificateOut)
+def get_certificate(
+    certificate_id: str,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> CertificateOut:
+    require_tenant_storage(db.get(Tenant, ctx.tenant_id))
+    row = find_certificate(db, certificate_id, ctx.tenant_id)
+    if row.status != "ready":
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    uploader = db.get(User, row.uploaded_by_user_id) if row.uploaded_by_user_id else None
+    return _certificate_to_out(row, row.equipment, uploader)
+
+
+@router.get("/certificates/{certificate_id}/view-url", response_model=CertificateViewUrlOut)
+def get_certificate_view_url(
+    certificate_id: str,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> CertificateViewUrlOut:
+    settings = get_settings()
+    require_tenant_storage(db.get(Tenant, ctx.tenant_id))
+    row = find_certificate(db, certificate_id, ctx.tenant_id)
+    if row.status != "ready":
+        raise HTTPException(status_code=404, detail="Certificate not ready")
+    # Reject cross-tenant / corrupted keys before signing or auditing.
+    r2_storage.assert_tenant_object_key(ctx.tenant_id, row.object_key)
+    url = r2_storage.presign_get(
+        tenant_id=ctx.tenant_id,
+        object_key=row.object_key,
+        file_name=row.file_name,
+        settings=settings,
+    )
+    eq = db.get(EquipmentCache, row.equipment_id)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="certificate.viewed",
+        target_type="certificate",
+        target_id=row.public_id,
+        target_name=row.file_name,
+        detail=(
+            f"Viewed {row.file_name}"
+            + (f" · equipment {(eq.name or eq.tag or eq.public_id)}" if eq else "")
+        ),
+    )
+    db.commit()
+    return CertificateViewUrlOut(
+        url=url,
+        expires_in=settings.certificate_view_url_ttl_seconds,
+        file_name=row.file_name,
+        content_type=row.content_type or r2_storage.PDF_CONTENT_TYPE,
+    )
+
+
+@router.delete("/certificates/{certificate_id}", status_code=204)
+def delete_certificate(
+    certificate_id: str,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> Response:
+    settings = get_settings()
+    require_tenant_storage(db.get(Tenant, ctx.tenant_id))
+    row = find_certificate(db, certificate_id, ctx.tenant_id)
+    eq = db.get(EquipmentCache, row.equipment_id)
+    object_key = row.object_key
+    # Validate key before removing the DB row so we never orphan a signed delete.
+    if object_key and settings.r2_ready:
+        r2_storage.assert_tenant_object_key(ctx.tenant_id, object_key)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="certificate.deleted",
+        target_type="equipment",
+        target_id=eq.public_id if eq else None,
+        target_name=(eq.name or eq.tag or eq.public_id) if eq else row.file_name,
+        detail=f"Certificate {row.public_id} · {row.file_name}",
+    )
+    db.delete(row)
+    db.commit()
+    if object_key and settings.r2_ready:
+        try:
+            r2_storage.delete_object(
+                tenant_id=ctx.tenant_id,
+                object_key=object_key,
+                settings=settings,
+            )
+        except Exception:
+            # DB row already removed; log-worthy but don't fail the client
+            pass
     return Response(status_code=204)
 
 
@@ -771,7 +1160,8 @@ def _overdue_equipment_rows(db: Session, tenant_id: int) -> list[OverdueEquipmen
         next_cal = row.next_calibration
         if next_cal is None:
             continue
-        if next_cal > today:
+        # Due today (days == 0) is due-soon / 1-day window, not overdue
+        if next_cal >= today:
             continue
         days_overdue = (today - next_cal).days
         overdue.append(
@@ -837,6 +1227,11 @@ def send_overdue_alert(
     sent = 0
     failed = 0
     subject = f"TrueGage — {len(items)} calibration{'s' if len(items) != 1 else ''} overdue"
+    tenant = db.get(Tenant, ctx.tenant_id)
+    cta_url = get_settings().workspace_equipment_url(
+        tenant.slug if tenant else "",
+        status="overdue",
+    )
     for member in members:
         try:
             send_overdue_alert_email(
@@ -844,7 +1239,7 @@ def send_overdue_alert(
                 to_email=member.email,
                 to_name=member.name or "",
                 items=items,
-                cta_url=get_settings().overdue_equipment_url,
+                cta_url=cta_url,
             )
             results.append(
                 EmailTestRecipientResult(
@@ -922,4 +1317,57 @@ def send_overdue_alert(
         equipment_count=len(items),
         message=message,
         results=results,
+    )
+
+
+@router.get("/reports/download")
+def download_report(
+    report_type: ReportType = Query("inventory", alias="type"),
+    fmt: ReportFormat = Query("csv", alias="format"),
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> Response:
+    """Generate a CSV or PDF compliance/equipment report for the current workspace."""
+    tenant = db.get(Tenant, ctx.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    eq_rows = db.query(EquipmentCache).filter(EquipmentCache.tenant_id == ctx.tenant_id).all()
+    refresh_equipment_statuses(db, eq_rows)
+    db.commit()
+
+    rows = (
+        db.query(EquipmentCache)
+        .filter(EquipmentCache.tenant_id == ctx.tenant_id)
+        .order_by(EquipmentCache.name.asc())
+        .all()
+    )
+    bundle = make_report(
+        tenant_name=tenant.name or tenant.slug,
+        tenant_slug=tenant.slug,
+        report_type=report_type,
+        fmt=fmt,
+        rows=rows,
+    )
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="report.downloaded",
+        target_type="report",
+        target_id=report_type,
+        target_name=bundle.label,
+        detail=f"{fmt.upper()} · {bundle.row_count} row(s)",
+    )
+    db.commit()
+
+    safe_name = bundle.filename.replace('"', "")
+    return Response(
+        content=bundle.content,
+        media_type=bundle.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Cache-Control": "no-store",
+            "X-Report-Rows": str(bundle.row_count),
+        },
     )

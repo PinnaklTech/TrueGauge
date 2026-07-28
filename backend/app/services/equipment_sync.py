@@ -123,16 +123,25 @@ def refresh_equipment_status(row: EquipmentCache, today: Optional[date] = None) 
     return False
 
 
-def refresh_equipment_statuses(db: Session, rows: list[EquipmentCache] | None = None) -> int:
+def refresh_equipment_statuses(
+    db: Session,
+    rows: list[EquipmentCache] | None = None,
+    today: Optional[date] = None,
+    *,
+    commit: bool = True,
+) -> int:
     """Recompute and persist stale calendar statuses. Returns number of rows updated."""
-    today = date.today()
+    as_of = today or date.today()
     targets = rows if rows is not None else db.query(EquipmentCache).all()
     updated = 0
     for row in targets:
-        if refresh_equipment_status(row, today):
+        if refresh_equipment_status(row, as_of):
             updated += 1
     if updated:
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     return updated
 
 

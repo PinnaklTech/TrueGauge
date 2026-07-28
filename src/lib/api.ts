@@ -1,7 +1,20 @@
 import type { CalStatus, Equipment } from "@/lib/mock-data";
 import { clearToken, getRefreshToken, getToken, setSessionTokens } from "@/lib/auth";
 
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8000";
+function resolveViteUrl(value: string | undefined, devFallback: string, label: string): string {
+  const trimmed = (value || "").trim().replace(/\/$/, "");
+  if (trimmed) return trimmed;
+  if (import.meta.env.DEV) return devFallback;
+  throw new Error(
+    `Missing ${label}. Set it at build time (see .env.production.example).`,
+  );
+}
+
+const API_URL = resolveViteUrl(
+  import.meta.env.VITE_API_URL as string | undefined,
+  "http://localhost:8000",
+  "VITE_API_URL",
+);
 
 export class ApiError extends Error {
   status: number;
@@ -447,6 +460,142 @@ export async function deleteCalibration(id: string) {
   await request<void>(`/api/calibrations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+export interface AppCertificate {
+  id: string;
+  equipmentId: string;
+  equipmentTag: string;
+  equipmentName: string;
+  calibrationId: string | null;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  status: string;
+  uploadedBy: string | null;
+  createdAt: string | null;
+}
+
+interface ApiCertificate {
+  id: string;
+  equipment_id: string;
+  equipment_tag: string;
+  equipment_name: string;
+  calibration_id: string | null;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  status: string;
+  uploaded_by: string | null;
+  created_at: string | null;
+}
+
+function toCertificate(row: ApiCertificate): AppCertificate {
+  return {
+    id: row.id,
+    equipmentId: row.equipment_id,
+    equipmentTag: row.equipment_tag,
+    equipmentName: row.equipment_name,
+    calibrationId: row.calibration_id,
+    fileName: row.file_name,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes,
+    sha256: row.sha256,
+    status: row.status,
+    uploadedBy: row.uploaded_by,
+    createdAt: row.created_at,
+  };
+}
+
+export const CERTIFICATE_MAX_BYTES = 2 * 1024 * 1024;
+
+export async function listCertificates(params?: { q?: string; equipmentId?: string }) {
+  const sp = new URLSearchParams();
+  if (params?.q) sp.set("q", params.q);
+  if (params?.equipmentId) sp.set("equipment_id", params.equipmentId);
+  const qs = sp.toString();
+  const data = await request<{ items: ApiCertificate[]; total: number }>(
+    `/api/certificates${qs ? `?${qs}` : ""}`,
+  );
+  return { items: data.items.map(toCertificate), total: data.total };
+}
+
+export async function listEquipmentCertificates(equipmentId: string) {
+  const data = await request<{ items: ApiCertificate[]; total: number }>(
+    `/api/equipment/${encodeURIComponent(equipmentId)}/certificates`,
+  );
+  return { items: data.items.map(toCertificate), total: data.total };
+}
+
+export async function getCertificateViewUrl(id: string) {
+  return request<{
+    url: string;
+    expires_in: number;
+    file_name: string;
+    content_type: string;
+  }>(`/api/certificates/${encodeURIComponent(id)}/view-url`);
+}
+
+export async function deleteCertificate(id: string) {
+  await request<void>(`/api/certificates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function uploadCertificateFile(opts: {
+  file: File;
+  equipmentId: string;
+  calibrationId?: string;
+}): Promise<AppCertificate> {
+  const { file, equipmentId, calibrationId } = opts;
+  if (file.type && file.type !== "application/pdf") {
+    throw new ApiError("Only PDF documents are supported", 400);
+  }
+  if (!file.name.toLowerCase().endsWith(".pdf")) {
+    throw new ApiError("Only PDF documents are supported", 400);
+  }
+  if (file.size > CERTIFICATE_MAX_BYTES) {
+    throw new ApiError("File exceeds the 2 MB size limit", 400);
+  }
+  if (file.size <= 0) {
+    throw new ApiError("File is empty", 400);
+  }
+
+  // Upload via API → R2 so the browser never needs R2 CORS.
+  const form = new FormData();
+  form.append("equipment_id", equipmentId);
+  if (calibrationId) form.append("calibration_id", calibrationId);
+  form.append("file", file, file.name);
+
+  const token = typeof window !== "undefined" ? getToken() : null;
+  const res = await fetch(`${API_URL}/api/certificates/upload`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: form,
+  });
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      const ok = await tryRefresh();
+      if (ok) return uploadCertificateFile(opts);
+      clearToken();
+      if (!window.location.pathname.startsWith("/auth")) {
+        window.location.href = "/auth/login";
+      }
+    }
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string | { msg?: string }[] };
+      if (typeof body.detail === "string") detail = body.detail;
+      else if (Array.isArray(body.detail)) detail = body.detail.map((d) => d.msg ?? JSON.stringify(d)).join(", ");
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(detail || `Request failed (${res.status})`, res.status);
+  }
+  const row = (await res.json()) as ApiCertificate;
+  return toCertificate(row);
+}
+
 export type UserRole = "platform_admin" | "admin" | "qa" | "technician" | "member";
 export type OrgUserRole = "admin" | "qa" | "technician" | "member";
 
@@ -465,6 +614,13 @@ export interface AuthUser {
   active?: boolean;
   tenant_id?: number | null;
   tenant_name?: string;
+  tenant_slug?: string;
+  storage_enabled?: boolean;
+  storage_used_bytes?: number;
+  storage_quota_bytes?: number;
+  updated_at?: string | null;
+  profile_setup_at?: string | null;
+  product_tour_at?: string | null;
 }
 
 export interface AuthSession {
@@ -475,6 +631,7 @@ export interface AuthSession {
   user: AuthUser;
   tenant_id: number;
   tenant_name: string;
+  tenant_slug: string;
 }
 
 export interface TenantItem {
@@ -491,6 +648,23 @@ export interface OrgProfileApi {
   address: string;
   timezone: string;
   accent_color: string;
+}
+
+export interface OrgTaxonomyApi {
+  departments: string[];
+  categories: string[];
+  locations: string[];
+}
+
+export interface ReminderRulesApi {
+  remind_30d: boolean;
+  remind_14d: boolean;
+  remind_7d: boolean;
+  remind_1d: boolean;
+  remind_overdue_daily: boolean;
+  remind_weekly_digest: boolean;
+  reminder_hour_local: number;
+  last_daily_run_at?: string | null;
 }
 
 export interface AppNotificationApi {
@@ -558,7 +732,7 @@ export async function register(payload: {
 }
 
 export async function getMe() {
-  return request<AuthUser & { tenant_id: number; tenant_name: string }>("/api/auth/me");
+  return request<AuthUser & { tenant_id: number; tenant_name: string; tenant_slug: string }>("/api/auth/me");
 }
 
 export async function listTenants() {
@@ -594,10 +768,24 @@ export async function updateMe(payload: Partial<{
   notify_in_app: boolean;
   password: string;
   current_password: string;
+  mark_profile_setup: boolean;
 }>) {
   return request<AuthUser>("/api/auth/me", {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function completeProductTour(skipped = false) {
+  return request<AuthUser>("/api/auth/onboarding/tour-complete", {
+    method: "POST",
+    body: JSON.stringify({ skipped }),
+  });
+}
+
+export async function resetProductTour() {
+  return request<AuthUser>("/api/auth/onboarding/tour-reset", {
+    method: "POST",
   });
 }
 
@@ -610,6 +798,115 @@ export async function saveOrgProfileApi(payload: OrgProfileApi) {
     method: "PUT",
     body: JSON.stringify(payload),
   });
+}
+
+export async function getOrgTaxonomy() {
+  return request<OrgTaxonomyApi>("/api/org/taxonomy");
+}
+
+export type OrgTaxonomyKind = keyof OrgTaxonomyApi;
+
+export async function saveOrgTaxonomyApi(payload: OrgTaxonomyApi) {
+  return request<OrgTaxonomyApi>("/api/org/taxonomy", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function addOrgTaxonomyTerm(kind: OrgTaxonomyKind, value: string) {
+  return request<OrgTaxonomyApi>("/api/org/taxonomy/terms", {
+    method: "POST",
+    body: JSON.stringify({ kind, value }),
+  });
+}
+
+export async function renameOrgTaxonomyTerm(
+  kind: OrgTaxonomyKind,
+  fromValue: string,
+  toValue: string,
+) {
+  return request<OrgTaxonomyApi>("/api/org/taxonomy/terms", {
+    method: "PATCH",
+    body: JSON.stringify({ kind, from: fromValue, to: toValue }),
+  });
+}
+
+export async function deleteOrgTaxonomyTerm(kind: OrgTaxonomyKind, value: string) {
+  const q = new URLSearchParams({ kind, value });
+  return request<OrgTaxonomyApi>(`/api/org/taxonomy/terms?${q}`, {
+    method: "DELETE",
+  });
+}
+
+export async function importOrgTaxonomyFromEquipment() {
+  return request<OrgTaxonomyApi>("/api/org/taxonomy/import-equipment", {
+    method: "POST",
+  });
+}
+
+export async function getReminderRules() {
+  return request<ReminderRulesApi>("/api/org/reminder-rules");
+}
+
+export async function saveReminderRules(payload: Omit<ReminderRulesApi, "last_daily_run_at">) {
+  return request<ReminderRulesApi>("/api/org/reminder-rules", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface ReminderJobApi {
+  id: number;
+  job_kind: string;
+  job_date_local: string;
+  status: string;
+  attempts: number;
+  error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface ReminderSendApi {
+  kind: string;
+  channel: string;
+  status: string;
+  subject: string;
+  recipient_key: string;
+  recipient_name?: string;
+  recipient_email?: string;
+  equipment_count: number;
+  sent_at?: string | null;
+  error?: string | null;
+}
+
+export interface ReminderLogApi {
+  jobs: ReminderJobApi[];
+  sends: ReminderSendApi[];
+  jobs_total: number;
+  sends_total: number;
+}
+
+export async function getReminderLogs(
+  limit = 50,
+  filters?: {
+    q?: string;
+    channel?: string;
+    kind?: string;
+    status?: string;
+    from_date?: string;
+    to_date?: string;
+  },
+) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (filters?.q?.trim()) params.set("q", filters.q.trim());
+  if (filters?.channel) params.set("channel", filters.channel);
+  if (filters?.kind) params.set("kind", filters.kind);
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.from_date) params.set("from_date", filters.from_date);
+  if (filters?.to_date) params.set("to_date", filters.to_date);
+  return request<ReminderLogApi>(`/api/org/reminder-logs?${params.toString()}`);
 }
 
 export async function listNotifications() {
@@ -633,6 +930,82 @@ export async function listEmailHistory(limit = 100) {
   return request<{ items: EmailAuditItem[]; total: number }>(`/api/email/history?limit=${limit}`);
 }
 
+export interface AuditEventApi {
+  id: string;
+  user_name: string;
+  action: string;
+  target_type: string;
+  target_id?: string | null;
+  target_name: string;
+  detail: string;
+  timestamp: string;
+}
+
+export async function listAuditEvents(limit = 40) {
+  return request<{ items: AuditEventApi[]; total: number }>(`/api/audit?limit=${limit}`);
+}
+
+export type ReportType = "inventory" | "overdue" | "due" | "compliance";
+export type ReportFormat = "csv" | "pdf";
+
+/** Download a generated report file (CSV or PDF) from the API. */
+export async function downloadReport(opts: {
+  type: ReportType;
+  format: ReportFormat;
+}): Promise<{ filename: string; rowCount: number }> {
+  const sp = new URLSearchParams({ type: opts.type, format: opts.format });
+  const path = `/api/reports/download?${sp.toString()}`;
+
+  const doFetch = async () => {
+    const token = typeof window !== "undefined" ? getToken() : null;
+    return fetch(`${API_URL}${path}`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401) {
+    const ok = await tryRefresh();
+    if (ok) res = await doFetch();
+    else {
+      clearToken();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/auth")) {
+        window.location.href = "/auth/login";
+      }
+      throw new ApiError("Session expired — please sign in again", 401);
+    }
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(detail || `Download failed (${res.status})`, res.status);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = /filename="([^"]+)"/i.exec(disposition);
+  const filename =
+    match?.[1] ||
+    `TrueGage-${opts.type}.${opts.format === "pdf" ? "pdf" : "csv"}`;
+  const rowCount = Number(res.headers.get("X-Report-Rows") || "0");
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  return { filename, rowCount };
+}
+
 export type AdminUserCreatePayload = {
   email: string;
   password: string;
@@ -640,6 +1013,7 @@ export type AdminUserCreatePayload = {
   role?: UserRole;
   job_title?: string;
   department?: string;
+  send_credentials?: boolean;
 };
 
 export type AdminUserUpdatePayload = {
@@ -672,6 +1046,17 @@ export async function updateUser(id: number, payload: AdminUserUpdatePayload) {
 
 export async function deleteUser(id: number) {
   await request<void>(`/api/users/${id}`, { method: "DELETE" });
+}
+
+export async function revokeUserSessions(id: number) {
+  return request<AuthUser>(`/api/users/${id}/revoke-sessions`, { method: "POST" });
+}
+
+export async function sendUserCredentials(id: number, password: string) {
+  return request<AuthUser>(`/api/users/${id}/send-credentials`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
 }
 
 export { API_URL };

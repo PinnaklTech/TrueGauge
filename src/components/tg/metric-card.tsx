@@ -22,7 +22,10 @@ export function MetricCard({
   deltaTone,
   to,
   search,
+  params,
   stagger = 0,
+  iconAttention = false,
+  tourId,
 }: {
   label: string;
   value: ReactNode;
@@ -32,8 +35,12 @@ export function MetricCard({
   tone?: MetricTone;
   deltaTone?: MetricTone;
   to?: string;
+  params?: Record<string, string>;
   search?: Record<string, unknown>;
   stagger?: number;
+  /** Soft motion on the icon to draw attention (e.g. overdue card). */
+  iconAttention?: boolean;
+  tourId?: string;
 }) {
   const toneRing: Record<string, string> = {
     default: "text-muted-foreground bg-muted",
@@ -60,8 +67,11 @@ export function MetricCard({
       {icon && (
         <div
           className={cn(
-            "grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-hover:rotate-0",
+            "grid h-9 w-9 shrink-0 place-items-center rounded-lg",
             toneRing[tone],
+            iconAttention
+              ? "tg-attention-icon"
+              : "transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 motion-reduce:transition-none motion-reduce:group-hover:scale-100 motion-reduce:group-hover:rotate-0",
           )}
         >
           {icon}
@@ -79,14 +89,22 @@ export function MetricCard({
 
   if (to) {
     return (
-      <Link to={to} search={search} className={className} style={style} aria-label={`Open ${label}`}>
+      <Link
+        to={to}
+        params={params}
+        search={search}
+        className={className}
+        style={style}
+        aria-label={`Open ${label}`}
+        data-tour={tourId}
+      >
         {body}
       </Link>
     );
   }
 
   return (
-    <div className={className} style={style}>
+    <div className={className} style={style} data-tour={tourId}>
       {body}
     </div>
   );

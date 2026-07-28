@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/
 import { Gauge } from "lucide-react";
 import { useEffect } from "react";
 import { isAuthenticated } from "@/lib/auth";
+import { getMe } from "@/lib/api";
 
 export const Route = createFileRoute("/auth")({
   component: AuthLayout,
@@ -16,7 +17,14 @@ function AuthLayout() {
   useEffect(() => {
     if (isHandoff) return;
     if (isAuthenticated()) {
-      void navigate({ to: "/" });
+      void getMe()
+        .then((session) => {
+          if (session.tenant_slug) {
+            return navigate({ to: "/workspace/$slug", params: { slug: session.tenant_slug } });
+          }
+          return navigate({ to: "/" });
+        })
+        .catch(() => navigate({ to: "/" }));
     }
   }, [navigate, isHandoff]);
 
