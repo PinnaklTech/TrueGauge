@@ -200,18 +200,21 @@ function CertificatesPage() {
       {!me ? (
         <PageState variant="loading" title="Loading vault…" />
       ) : !storageEnabled ? (
+        // Keep tour anchors present even without vault plan so the product tour never stalls.
         <div
           className="rounded-xl border border-border bg-card px-6 py-14 text-center shadow-xs"
-          data-tour="certificates-vault"
+          data-tour="certificates-upload"
         >
-          <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-3 text-sm font-medium text-foreground">
-            Certificate vault is not included in your plan
-          </p>
-          <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-            Contact TrueGage to enable private PDF certificate storage for your company. Once
-            enabled, you get 2 GB of vault space for calibration documents.
-          </p>
+          <div data-tour="certificates-vault">
+            <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
+            <p className="mt-3 text-sm font-medium text-foreground">
+              Certificate vault is not included in your plan
+            </p>
+            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+              Contact TrueGage to enable private PDF certificate storage for your company. Once
+              enabled, you get 2 GB of vault space for calibration documents.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="space-y-4" data-tour="certificates-vault">
@@ -285,7 +288,7 @@ function CertificatesPage() {
               />
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground" data-tour="certificates-upload">
               Your role can view certificates but cannot upload.
             </p>
           )}

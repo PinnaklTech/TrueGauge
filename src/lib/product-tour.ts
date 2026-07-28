@@ -462,6 +462,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
         },
       },
       {
+        // Must be a single selector — comma lists use document order and hit the page heading first.
         element: '[data-tour="certificates-upload"]',
         popover: {
           title: "Upload a certificate",
@@ -537,7 +538,8 @@ function buildSteps(includeLists: boolean): TourStep[] {
         },
       },
       {
-        element: '[data-tour="certificates-vault"], [data-tour="certificates-intro"]',
+        // Single selector — avoid matching the page heading (certificates-intro) above the vault card.
+        element: '[data-tour="certificates-vault"]',
         popover: {
           title: "Certificate vault",
           description:
@@ -624,19 +626,19 @@ async function prepareStepUi(step: number, includeLists: boolean) {
       }
     }
   } else if (path === "certificates") {
-    // Prefer the upload card so the highlight anchors mid-page (not the tall vault wrapper)
-    const upload = await waitForSelector('[data-tour="certificates-upload"]', 100);
-    if (!upload) {
-      await waitForSelector(
-        '[data-tour="certificates-vault"], [data-tour="certificates-intro"]',
-      );
-    }
-    await delay(200);
+    // Wait for the card below the heading (upload and/or vault) — never the intro title.
+    await waitForSelector('[data-tour="certificates-intro"]');
+    const card = await waitForSelector(
+      '[data-tour="certificates-upload"], [data-tour="certificates-vault"]',
+      120,
+    );
+    await delay(160);
     const target =
       document.querySelector('[data-tour="certificates-upload"]') ??
-      document.querySelector('[data-tour="certificates-vault"]');
+      document.querySelector('[data-tour="certificates-vault"]') ??
+      card;
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
-    await delay(320);
+    await delay(280);
   } else {
     await waitForSelector('[data-tour="nav-equipment"]');
     if ((includeLists && step >= 13) || (!includeLists && step >= 8)) {
