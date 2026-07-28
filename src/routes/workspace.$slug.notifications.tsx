@@ -438,16 +438,20 @@ function SendOverdueEmailDialog({
           <div className="text-sm text-muted-foreground">
             {isAdmin ? (
               <>
-                No team members yet.{" "}
+                No login accounts yet.{" "}
                 <button
                   type="button"
                   className="text-primary hover:underline"
                   onClick={() => {
                     onOpenChange(false);
-                    void navigate({ to: "/workspace/$slug/settings", params: { slug } });
+                    void navigate({
+                      to: "/workspace/$slug/settings",
+                      params: { slug },
+                      search: { section: "accounts" },
+                    });
                   }}
                 >
-                  Add recipients in Settings
+                  Add people in Settings → People & access
                 </button>
               </>
             ) : (

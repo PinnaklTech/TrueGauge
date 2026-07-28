@@ -34,9 +34,7 @@ import {
   syncOdooEquipment,
   testOdooConnection,
   listTeamMembers,
-  createTeamMember,
   updateTeamMember,
-  deleteTeamMember,
   getEmailSettings,
   saveEmailSettings,
   sendEmailCheck,
@@ -318,7 +316,9 @@ function SettingsPage() {
 
           {active === "accounts" && <PeopleAccessPanel />}
 
-          {active === "users" && <TeamMembersPanel onSendCheckEmail={openCheckEmail} />}
+          {active === "users" && (
+            <TeamMembersPanel onSendCheckEmail={openCheckEmail} selectSection={selectSection} />
+          )}
 
           {active === "email" && (
             <EmailDeliveryPanel
@@ -1170,7 +1170,7 @@ function PeopleAccessPanel() {
     <div className="space-y-4">
       <SettingsBlock
         title="People & access"
-        description="Manage who can sign in to this workspace and which role they have. Notification recipients (email-only) are managed separately."
+        description="Manage who can sign in to this workspace and which role they have. New accounts automatically appear under Notification recipients."
       >
         <div className="mb-4 overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[640px] text-sm">
@@ -1541,22 +1541,15 @@ function PeopleAccessPanel() {
   );
 }
 
-function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }) {
+function TeamMembersPanel({
+  onSendCheckEmail,
+  selectSection,
+}: {
+  onSendCheckEmail: () => void;
+  selectSection: (id: SettingsSection) => void;
+}) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("member");
-  const [orgMember, setOrgMember] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<TeamMember | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editRole, setEditRole] = useState("member");
-  const [editActive, setEditActive] = useState(true);
-  const [editOrgMember, setEditOrgMember] = useState(true);
-  const [editSaving, setEditSaving] = useState(false);
 
   const refresh = async () => {
     try {
@@ -1573,68 +1566,6 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
     void refresh();
   }, []);
 
-  const openEdit = (member: TeamMember) => {
-    setEditing(member);
-    setEditName(member.name);
-    setEditEmail(member.email);
-    setEditRole(member.role);
-    setEditActive(member.active);
-    setEditOrgMember(member.org_member !== false);
-  };
-
-  const onAdd = async () => {
-    if (!email.trim()) {
-      toast.error("Email is required");
-      return;
-    }
-    setSaving(true);
-    try {
-      await createTeamMember({
-        email: email.trim(),
-        name: name.trim(),
-        role,
-        active: true,
-        org_member: orgMember,
-      });
-      setName("");
-      setEmail("");
-      setRole("member");
-      setOrgMember(true);
-      setShowForm(false);
-      toast.success("Team member added — they will receive notification emails");
-      await refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add team member");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const onSaveEdit = async () => {
-    if (!editing) return;
-    if (!editEmail.trim()) {
-      toast.error("Email is required");
-      return;
-    }
-    setEditSaving(true);
-    try {
-      await updateTeamMember(editing.id, {
-        name: editName.trim(),
-        email: editEmail.trim(),
-        role: editRole,
-        active: editActive,
-        org_member: editOrgMember,
-      });
-      toast.success("Team member updated");
-      setEditing(null);
-      await refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
   const onToggleActive = async (member: TeamMember) => {
     try {
       await updateTeamMember(member.id, { active: !member.active });
@@ -1645,87 +1576,25 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
     }
   };
 
-  const onRemove = async (member: TeamMember) => {
-    if (!window.confirm(`Remove ${member.email} from the notification team?`)) return;
-    try {
-      await deleteTeamMember(member.id);
-      toast.success("Removed from team");
-      await refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Remove failed");
-    }
-  };
-
   return (
     <SettingsBlock
       title="Notification recipients"
-      description="Email-only contacts for calibration alerts. These people do not get a TrueGage login — manage sign-in access under People & access."
+      description="Pulled automatically from People & access login accounts. Toggle emails on or off here — add or edit people under People & access."
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {loading ? "Loading…" : `${members.length} recipient${members.length === 1 ? "" : "s"}`}
         </p>
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => selectSection("accounts")}>
+            Manage people
+          </Button>
           <Button size="sm" variant="outline" onClick={onSendCheckEmail} disabled={members.length === 0}>
             <Send className="mr-1.5 h-3.5 w-3.5" />
             Send check email
           </Button>
-          <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "Cancel" : "+ Add member"}
-          </Button>
         </div>
       </div>
-
-      {showForm && (
-        <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-border bg-surface/40 p-4 sm:grid-cols-2">
-          <Field label="Name" htmlFor="team-add-name">
-            <Input
-              id="team-add-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Jane Doe"
-            />
-          </Field>
-          <Field label="Email" htmlFor="team-add-email">
-            <Input
-              id="team-add-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="jane@company.com"
-              required
-            />
-          </Field>
-          <Field label="Role label" htmlFor="team-add-role">
-            <select
-              id="team-add-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="tg-select"
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-              <option value="qa">QA</option>
-              <option value="technician">Technician</option>
-            </select>
-          </Field>
-          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2 sm:col-span-2">
-            <div>
-              <div className="text-sm font-medium text-foreground">Organization member</div>
-              <div className="text-xs text-muted-foreground">
-                On = your company. Off = TrueGage / external support (admins only when sending from
-                Notifications).
-              </div>
-            </div>
-            <Switch checked={orgMember} onCheckedChange={setOrgMember} />
-          </div>
-          <div className="flex items-end sm:col-span-2">
-            <Button onClick={() => void onAdd()} disabled={saving} className="w-full sm:w-auto">
-              {saving ? "Adding…" : "Add to team"}
-            </Button>
-          </div>
-        </div>
-      )}
 
       <div className="max-h-[50vh] overflow-x-auto rounded-lg border border-border tg-scrollbar">
         <table className="w-full text-sm">
@@ -1734,15 +1603,13 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="px-4 py-2 font-medium">Email</th>
               <th className="px-4 py-2 font-medium">Role</th>
-              <th className="px-4 py-2 font-medium">Org member</th>
               <th className="px-4 py-2 font-medium">Emails</th>
-              <th className="px-4 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="p-4">
+                <td colSpan={4} className="p-4">
                   <PageState
                     variant="loading"
                     title="Loading team…"
@@ -1752,12 +1619,12 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
               </tr>
             ) : members.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-4">
+                <td colSpan={4} className="p-4">
                   <PageState
                     variant="empty"
-                    title="No team members yet"
-                    description="Add an email to include someone in calibration notification emails."
-                    action={{ label: "Add member", onClick: () => setShowForm(true) }}
+                    title="No login accounts yet"
+                    description="Add people under People & access — they will show up here for calibration emails."
+                    action={{ label: "Open People & access", onClick: () => selectSection("accounts") }}
                     className="border-0 bg-transparent py-6"
                   />
                 </td>
@@ -1769,33 +1636,11 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
                   <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{m.email}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{roleDisplayLabel(m.role)}</td>
                   <td className="px-4 py-2.5">
-                    <span
-                      className={cn(
-                        "rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase",
-                        m.org_member !== false
-                          ? "bg-primary/15 text-primary"
-                          : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {m.org_member !== false ? "Org" : "TrueGage / external"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
                     <div className="inline-flex items-center gap-2 text-xs">
                       <Switch checked={m.active} onCheckedChange={() => void onToggleActive(m)} />
                       <span className={m.active ? "text-success" : "text-muted-foreground"}>
                         {m.active ? "On" : "Off"}
                       </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      <Button variant="outline" size="sm" onClick={() => openEdit(m)}>
-                        Edit
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => void onRemove(m)}>
-                        Remove
-                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -1804,67 +1649,6 @@ function TeamMembersPanel({ onSendCheckEmail }: { onSendCheckEmail: () => void }
           </tbody>
         </table>
       </div>
-
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit team member</DialogTitle>
-            <DialogDescription>
-              Update contact details used for calibration notification emails.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
-            <Field label="Name" htmlFor="team-edit-name">
-              <Input id="team-edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
-            </Field>
-            <Field label="Email" htmlFor="team-edit-email">
-              <Input
-                id="team-edit-email"
-                type="email"
-                value={editEmail}
-                onChange={(e) => setEditEmail(e.target.value)}
-              />
-            </Field>
-            <Field label="Role label" htmlFor="team-edit-role">
-              <select
-                id="team-edit-role"
-                value={editRole}
-                onChange={(e) => setEditRole(e.target.value)}
-                className="tg-select"
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-                <option value="qa">QA</option>
-                <option value="technician">Technician</option>
-              </select>
-            </Field>
-            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-              <div>
-                <div className="text-sm font-medium">Organization member</div>
-                <div className="text-xs text-muted-foreground">
-                  Off = TrueGage / external contact (hidden from normal users when sending alerts)
-                </div>
-              </div>
-              <Switch checked={editOrgMember} onCheckedChange={setEditOrgMember} />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-              <div>
-                <div className="text-sm font-medium">Receive emails</div>
-                <div className="text-xs text-muted-foreground">Include in notification sends</div>
-              </div>
-              <Switch checked={editActive} onCheckedChange={setEditActive} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void onSaveEdit()} disabled={editSaving}>
-              {editSaving ? "Saving…" : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </SettingsBlock>
   );
 }
@@ -2116,8 +1900,8 @@ function SendCheckEmailDialog({
         <DialogHeader>
           <DialogTitle>Send temporary check email</DialogTitle>
           <DialogDescription>
-            Pick team members to receive a short delivery-check message. Requires Email Delivery SMTP
-            settings to be saved first.
+            Pick people from People & access to receive a short delivery-check message. Requires Email
+            Delivery SMTP settings to be saved first.
           </DialogDescription>
         </DialogHeader>
 
@@ -2126,8 +1910,8 @@ function SendCheckEmailDialog({
         ) : members.length === 0 ? (
           <PageState
             variant="empty"
-            title="No team members yet"
-            description="Add recipients under Team & Notifications first."
+            title="No login accounts yet"
+            description="Add people under Settings → People & access first."
             className="border-0 bg-transparent py-6"
           />
         ) : (

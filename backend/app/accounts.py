@@ -200,6 +200,115 @@ def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def upsert_recipient_for_login_user(
+    db: Session,
+    user: User,
+    *,
+    previous_email: str | None = None,
+) -> NotificationRecipient | None:
+    """Keep notification_recipients in sync with a workspace login account."""
+    if user.tenant_id is None or user.role == PLATFORM_ADMIN:
+        return None
+    email = _normalize_email(user.email)
+    row: NotificationRecipient | None = None
+    if previous_email:
+        prev = _normalize_email(previous_email)
+        if prev and prev != email:
+            row = (
+                db.query(NotificationRecipient)
+                .filter(
+                    NotificationRecipient.tenant_id == user.tenant_id,
+                    NotificationRecipient.email == prev,
+                )
+                .one_or_none()
+            )
+    if row is None:
+        row = (
+            db.query(NotificationRecipient)
+            .filter(
+                NotificationRecipient.tenant_id == user.tenant_id,
+                NotificationRecipient.email == email,
+            )
+            .one_or_none()
+        )
+
+    name = (user.full_name or "").strip() or email.split("@")[0]
+    role = (user.role or "member").strip() or "member"
+    if row is None:
+        row = NotificationRecipient(
+            tenant_id=user.tenant_id,
+            email=email,
+            name=name,
+            role=role,
+            active=bool(user.active),
+            org_member=True,
+        )
+        db.add(row)
+    else:
+        # Avoid unique(tenant, email) clash if another row already owns the new email.
+        if row.email != email:
+            clash = (
+                db.query(NotificationRecipient)
+                .filter(
+                    NotificationRecipient.tenant_id == user.tenant_id,
+                    NotificationRecipient.email == email,
+                    NotificationRecipient.id != row.id,
+                )
+                .one_or_none()
+            )
+            if clash is not None:
+                db.delete(clash)
+                db.flush()
+            row.email = email
+        row.name = name
+        row.role = role
+        row.org_member = True
+        if not user.active:
+            row.active = False
+    return row
+
+
+def remove_recipient_for_login_email(db: Session, tenant_id: int, email: str) -> None:
+    normalized = _normalize_email(email)
+    row = (
+        db.query(NotificationRecipient)
+        .filter(
+            NotificationRecipient.tenant_id == tenant_id,
+            NotificationRecipient.email == normalized,
+        )
+        .one_or_none()
+    )
+    if row is not None:
+        db.delete(row)
+
+
+def sync_login_users_to_notification_recipients(db: Session, tenant_id: int) -> None:
+    """Ensure every workspace login account appears as a notification recipient."""
+    users = (
+        db.query(User)
+        .filter(User.tenant_id == tenant_id, User.role != PLATFORM_ADMIN)
+        .all()
+    )
+    login_emails = {_normalize_email(u.email) for u in users}
+    for user in users:
+        upsert_recipient_for_login_user(db, user)
+
+    # Drop org-member recipient rows that no longer have a login (legacy duplicates).
+    # Keep org_member=False rows (external / TrueGage contacts) untouched.
+    orphans = (
+        db.query(NotificationRecipient)
+        .filter(
+            NotificationRecipient.tenant_id == tenant_id,
+            NotificationRecipient.org_member.is_(True),
+        )
+        .all()
+    )
+    for row in orphans:
+        if _normalize_email(row.email) not in login_emails:
+            db.delete(row)
+    db.flush()
+
+
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
     return (slug[:60] or "tenant")
@@ -1664,6 +1773,8 @@ def platform_create_tenant_user(
         active=True,
     )
     db.add(row)
+    db.flush()
+    upsert_recipient_for_login_user(db, row)
     _record_auth_event(
         db,
         kind="staff_create_user",
@@ -1697,6 +1808,7 @@ def platform_update_tenant_user(
         raise HTTPException(status_code=404, detail="User not found")
     if row.role == PLATFORM_ADMIN:
         raise HTTPException(status_code=400, detail="Cannot edit platform admin via company tools")
+    previous_email = row.email
     data = body.model_dump(exclude_unset=True)
     if "full_name" in data and data["full_name"] is not None:
         row.full_name = data["full_name"].strip()
@@ -1748,6 +1860,7 @@ def platform_update_tenant_user(
         _bump_token_version(row)
         _revoke_refresh_tokens(db, row.id)
     row.updated_at = datetime.now(timezone.utc)
+    upsert_recipient_for_login_user(db, row, previous_email=previous_email)
     _record_auth_event(
         db,
         kind="staff_update_user",
@@ -2351,16 +2464,17 @@ def create_tenant(
     db.add(TenantMembership(user_id=user.id, tenant_id=tenant.id))
 
     full_name = (body.admin_full_name or "").strip() or email.split("@")[0]
-    db.add(
-        User(
-            tenant_id=tenant.id,
-            email=email,
-            password_hash=hash_password(admin_password),
-            full_name=full_name,
-            role="admin",
-            active=True,
-        )
+    admin_user = User(
+        tenant_id=tenant.id,
+        email=email,
+        password_hash=hash_password(admin_password),
+        full_name=full_name,
+        role="admin",
+        active=True,
     )
+    db.add(admin_user)
+    db.flush()
+    upsert_recipient_for_login_user(db, admin_user)
 
     _record_auth_event(
         db,
@@ -2552,6 +2666,7 @@ def create_user(
     )
     db.add(user)
     db.flush()
+    upsert_recipient_for_login_user(db, user)
 
     if body.send_credentials:
         _send_user_credentials_email(
@@ -2687,6 +2802,7 @@ def admin_update_user(
     if row is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    previous_email = row.email
     data = body.model_dump(exclude_unset=True)
     if "password" in data:
         pw = data.pop("password")
@@ -2734,6 +2850,7 @@ def admin_update_user(
             value = value.strip()
         setattr(row, key, value)
     row.updated_at = datetime.now(timezone.utc)
+    upsert_recipient_for_login_user(db, row, previous_email=previous_email)
     db.commit()
     db.refresh(row)
     return user_to_out(row)
@@ -2767,6 +2884,7 @@ def delete_user(
         )
         if other_admins == 0:
             raise HTTPException(status_code=400, detail="Cannot delete the last admin account")
+    remove_recipient_for_login_email(db, ctx.tenant_id, row.email)
     db.delete(row)
     db.commit()
     return Response(status_code=204)

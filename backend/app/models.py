@@ -304,7 +304,7 @@ class Certificate(Base):
 
 
 class NotificationRecipient(Base):
-    """Team member who should receive calibration notification emails (no login)."""
+    """Calibration email recipient, synced from workspace login accounts (People & access)."""
 
     __tablename__ = "notification_recipients"
     __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_recipients_tenant_email"),)

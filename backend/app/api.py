@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
-from app.accounts import get_or_create_settings, log_email_send, notify_email_batch
+from app.accounts import (
+    get_or_create_settings,
+    log_email_send,
+    notify_email_batch,
+    sync_login_users_to_notification_recipients,
+)
 from app.config import get_settings
 from app.database import get_db
 from app.deps import TenantContext, get_tenant_context, is_org_admin_role, require_admin, require_writer
@@ -901,6 +906,9 @@ def list_team_members(
     db: Session = Depends(get_db),
     ctx: TenantContext = Depends(get_tenant_context),
 ) -> TeamMemberListOut:
+    # Recipients are driven by People & access login accounts.
+    sync_login_users_to_notification_recipients(db, ctx.tenant_id)
+    db.commit()
     rows = (
         db.query(NotificationRecipient)
         .filter(NotificationRecipient.tenant_id == ctx.tenant_id)
@@ -916,6 +924,12 @@ def create_team_member(
     db: Session = Depends(get_db),
     ctx: TenantContext = Depends(require_admin),
 ) -> TeamMemberOut:
+    # Org members come from People & access. Only external contacts can be added here.
+    if payload.org_member:
+        raise HTTPException(
+            status_code=400,
+            detail="Organization recipients come from People & access. Add a login account there instead.",
+        )
     email = _normalize_email(payload.email)
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid email address")
@@ -932,7 +946,7 @@ def create_team_member(
         name=payload.name.strip(),
         role=(payload.role or "member").strip() or "member",
         active=payload.active,
-        org_member=payload.org_member,
+        org_member=False,
     )
     db.add(row)
     db.commit()
@@ -955,6 +969,15 @@ def update_team_member(
     if row is None:
         raise HTTPException(status_code=404, detail="Team member not found")
     data = payload.model_dump(exclude_unset=True)
+    # Login-synced org members: only email opt-in/out is editable here.
+    if row.org_member:
+        allowed = {k: v for k, v in data.items() if k == "active"}
+        if set(data.keys()) - {"active"}:
+            raise HTTPException(
+                status_code=400,
+                detail="Name, email, and role for organization members are managed under People & access.",
+            )
+        data = allowed
     if "email" in data and data["email"] is not None:
         email = _normalize_email(data["email"])
         if "@" not in email or "." not in email.split("@")[-1]:
@@ -995,6 +1018,11 @@ def delete_team_member(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="Team member not found")
+    if row.org_member:
+        raise HTTPException(
+            status_code=400,
+            detail="Remove the login under People & access instead. Use the Emails toggle to pause notifications.",
+        )
     db.delete(row)
     db.commit()
     return Response(status_code=204)
