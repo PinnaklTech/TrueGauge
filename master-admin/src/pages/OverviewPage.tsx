@@ -132,7 +132,7 @@ export function OverviewPage() {
               <div className="kpi-value">{data.user_count}</div>
             </div>
             <div className="kpi">
-              <div className="kpi-label">TrueGage staff</div>
+              <div className="kpi-label">TheTruegage staff</div>
               <div className="kpi-value">{data.staff_count}</div>
             </div>
             <div className="kpi">

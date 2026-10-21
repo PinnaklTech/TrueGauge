@@ -250,8 +250,8 @@ export function EquipmentFormDialog({
           <DialogTitle>{mode === "create" ? "New equipment" : "Edit equipment"}</DialogTitle>
           <DialogDescription className="text-sm">
             {mode === "create"
-              ? "Add equipment directly in TrueGage. Odoo import is optional."
-              : "Changes are saved in TrueGage only — they are not written back to Odoo."}
+              ? "Add equipment directly in TheTruegage. Odoo import is optional."
+              : "Changes are saved in TheTruegage only — they are not written back to Odoo."}
           </DialogDescription>
         </DialogHeader>
         <form

@@ -137,7 +137,7 @@ export const PERMISSION_ROWS: Array<{
 ];
 
 export function roleDisplayLabel(role: string) {
-  if (role === "platform_admin") return "TrueGage Admin";
+  if (role === "platform_admin") return "TheTruegage Admin";
   if (role in ROLE_META) return ROLE_META[role as WorkspaceRole].label;
   return role;
 }

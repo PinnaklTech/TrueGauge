@@ -95,7 +95,7 @@ function AuthLayout() {
           <div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-foreground">
             <Gauge className="h-5 w-5" strokeWidth={2.25} />
           </div>
-          <div className="font-display text-lg font-semibold tracking-tight text-white">TrueGage</div>
+          <div className="font-display text-lg font-semibold tracking-tight text-white">TheTruegage</div>
         </div>
       </header>
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 pb-16 pt-4">

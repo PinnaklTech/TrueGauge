@@ -33,7 +33,7 @@ def require_tenant_storage(tenant: Tenant | None) -> Tenant:
     if not bool(getattr(tenant, "storage_enabled", False)):
         raise HTTPException(
             status_code=403,
-            detail="Certificate vault is not included in your plan. Contact TrueGage to enable document storage.",
+            detail="Certificate vault is not included in your plan. Contact TheTruegage to enable document storage.",
         )
     return tenant
 
@@ -51,7 +51,7 @@ def assert_storage_quota(
     if used + max(0, int(additional_bytes)) > quota:
         raise HTTPException(
             status_code=400,
-            detail="Company storage quota exceeded (2 GB). Delete unused certificates or contact TrueGage.",
+            detail="Company storage quota exceeded (2 GB). Delete unused certificates or contact TheTruegage.",
         )
 
 

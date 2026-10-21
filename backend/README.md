@@ -1,4 +1,4 @@
-# TrueGage API
+# TheTruegage API
 
 FastAPI + PostgreSQL backend for Odoo equipment sync (see root `Odoo_Calibration_Notification_Platform_PRD.md`).
 

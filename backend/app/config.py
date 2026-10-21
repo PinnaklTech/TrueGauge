@@ -31,13 +31,13 @@ class Settings(BaseSettings):
     login_rate_limit_per_minute: int = 5
     # Shared 6-digit passcode for Master Admin staff login (required in production)
     master_admin_passcode: str = ""
-    # TrueGage platform SMTP (onboarding emails to new company admins)
+    # TheTruegage platform SMTP (onboarding emails to new company admins)
     system_smtp_host: str = ""
     system_smtp_port: int = 587
     system_smtp_username: str = ""
     system_smtp_password: str = ""
     system_smtp_from_email: str = ""
-    system_smtp_from_name: str = "TrueGage"
+    system_smtp_from_name: str = "TheTruegage"
     system_smtp_use_tls: bool = True
     # Cloudflare R2 (S3-compatible) — private certificate storage
     r2_account_id: str = ""

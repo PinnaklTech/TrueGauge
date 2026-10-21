@@ -372,8 +372,8 @@ export async function buildLabelsPdf(
   const warnings: string[] = [];
   const sorted = opts.testPrintOnly ? [] : sortLabels(items, opts.sortBy);
   const doc = await PDFDocument.create();
-  doc.setTitle("TrueGage Labels");
-  doc.setCreator("TrueGage");
+  doc.setTitle("TheTruegage Labels");
+  doc.setCreator("TheTruegage");
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
 
@@ -384,7 +384,7 @@ export async function buildLabelsPdf(
   if (opts.testPrintOnly) {
     const page = doc.addPage([pageWidth, pageHeight]);
     drawCutGuides(page, g, opts.cutGuides === "none" ? "dashed" : opts.cutGuides, opts.offsetXMm, opts.offsetYMm);
-    safeDrawText(page, "TrueGage alignment test - print at 100% / Actual size", {
+    safeDrawText(page, "TheTruegage alignment test - print at 100% / Actual size", {
       x: mm(g.marginLeftMm || 8),
       y: mm(4),
       size: 8,
@@ -394,7 +394,7 @@ export async function buildLabelsPdf(
     const bytes = await doc.save();
     return {
       bytes,
-      filename: `TrueGage-Labels-test-${new Date().toISOString().slice(0, 10)}.pdf`,
+      filename: `TheTruegage-Labels-test-${new Date().toISOString().slice(0, 10)}.pdf`,
       pageCount: 1,
       warnings,
     };
@@ -424,7 +424,7 @@ export async function buildLabelsPdf(
       if (opts.preset.mode === "print_cut" || opts.preset.mode === "precut") {
         safeDrawText(
           page,
-          `TrueGage labels - page ${pageIndex + 1} of ${totalPages} - generated ${new Date().toISOString().slice(0, 10)}`,
+          `TheTruegage labels - page ${pageIndex + 1} of ${totalPages} - generated ${new Date().toISOString().slice(0, 10)}`,
           {
             x: mm(Math.max(g.marginLeftMm, 6)),
             y: mm(3),
@@ -447,7 +447,7 @@ export async function buildLabelsPdf(
   const date = new Date().toISOString().slice(0, 10);
   return {
     bytes,
-    filename: `TrueGage-Labels-${date}-${sorted.length}.pdf`,
+    filename: `TheTruegage-Labels-${date}-${sorted.length}.pdf`,
     pageCount: doc.getPageCount(),
     warnings,
   };

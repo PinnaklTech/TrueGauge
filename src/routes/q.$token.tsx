@@ -6,7 +6,7 @@ import { Loader2, QrCode, ScanLine, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/q/$token")({
-  head: () => ({ meta: [{ title: "Opening equipment · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Opening equipment · TheTruegage" }] }),
   component: QrDeepLinkPage,
 });
 

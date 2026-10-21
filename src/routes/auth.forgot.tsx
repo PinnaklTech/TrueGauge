@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { KeyRound } from "lucide-react";
 
 export const Route = createFileRoute("/auth/forgot")({
-  head: () => ({ meta: [{ title: "Reset password · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Reset password · TheTruegage" }] }),
   component: ForgotPage,
 });
 

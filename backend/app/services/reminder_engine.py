@@ -525,7 +525,7 @@ def _process_daily(
             for eq in due_30
         ]
         subject = (
-            f"TrueGage — Daily calibration digest "
+            f"TheTruegage — Daily calibration digest "
             f"({total_items} item{'s' if total_items != 1 else ''})"
         )
         try:
@@ -654,7 +654,7 @@ def _process_weekly(
         )
         if disp is None:
             continue
-        subject = f"TrueGage — Weekly digest ({week_key}): {len(upcoming)} upcoming"
+        subject = f"TheTruegage — Weekly digest ({week_key}): {len(upcoming)} upcoming"
         try:
             send_weekly_digest_email(
                 config,

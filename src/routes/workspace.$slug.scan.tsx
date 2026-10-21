@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/workspace/$slug/scan")({
-  head: () => ({ meta: [{ title: "Scan · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Scan · TheTruegage" }] }),
   component: ScanPage,
 });
 
@@ -131,7 +131,7 @@ function ScanPage() {
     setMatches(null);
     try {
       if (!window.isSecureContext && location.hostname !== "localhost") {
-        throw new Error("Camera requires HTTPS. Use manual entry or open TrueGage over https.");
+        throw new Error("Camera requires HTTPS. Use manual entry or open TheTruegage over https.");
       }
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("This browser has no camera API. Enter a code manually or upload a photo.");
@@ -282,7 +282,7 @@ function ScanPage() {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80 px-6 text-center">
             <Camera className="h-12 w-12 text-white/70" />
             <p className="max-w-sm text-sm text-white/80">
-              Point your camera at a TrueGage QR label or plant barcode. Tip: hold 10–30 cm away;
+              Point your camera at a TheTruegage QR label or plant barcode. Tip: hold 10–30 cm away;
               use torch in low light.
             </p>
             {error && <p className="max-w-sm text-sm text-red-300">{error}</p>}

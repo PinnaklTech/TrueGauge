@@ -27,7 +27,7 @@ import { Check, Gauge, Loader2, LogIn } from "lucide-react";
 import { LoginAtmosphere } from "@/components/tg/login-enter-transition";
 
 export const Route = createFileRoute("/auth/login")({
-  head: () => ({ meta: [{ title: "Sign in · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Sign in · TheTruegage" }] }),
   validateSearch: (search: Record<string, unknown>): { returnTo?: string } => {
     const raw = search.returnTo;
     if (isSafeReturnTo(raw)) return { returnTo: raw.trim() };
@@ -36,7 +36,13 @@ export const Route = createFileRoute("/auth/login")({
   component: LoginPage,
 });
 
-const features = ["Equipment registry", "Due-date alerts", "Compliance reports"] as const;
+const features = [
+  "Equipment registry",
+  "Due-date alerts",
+  "Certificate vault",
+  "Compliance reports",
+  "and more",
+] as const;
 
 async function warmWorkspaceCache(queryClient: QueryClient, session: AuthSession) {
   queryClient.setQueryData(["me"], {
@@ -147,16 +153,21 @@ function LoginPage() {
       <aside className="relative hidden w-[52%] shrink-0 flex-col justify-between overflow-hidden lg:flex">
         <LoginAtmosphere />
 
-        <div className="relative z-10 flex items-center gap-2.5 px-10 pt-10">
+        <a
+          href="https://thetruegage.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="relative z-10 flex items-center gap-2.5 px-10 pt-10 transition-opacity hover:opacity-90"
+        >
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-white/15 text-white ring-1 ring-white/25 backdrop-blur-sm">
             <Gauge className="h-5 w-5" strokeWidth={2.25} />
           </div>
-          <span className="font-display text-lg font-semibold tracking-tight text-white">TrueGage</span>
-        </div>
+          <span className="font-display text-lg font-semibold tracking-tight text-white">TheTruegage</span>
+        </a>
 
         <div className="relative z-10 max-w-lg px-10 pb-16">
           <h1 className="font-display text-4xl font-semibold leading-[1.1] tracking-tight text-white xl:text-5xl">
-            Calibration made visible.
+            Calibration made simple.
           </h1>
           <p className="mt-4 max-w-md text-base leading-relaxed text-white/75">
             Keep every gauge audit-ready — due dates, certificates, and compliance in one workspace.
@@ -187,12 +198,17 @@ function LoginPage() {
       </aside>
 
       <main className="tg-login-form relative flex min-h-screen flex-1 flex-col bg-white text-slate-800">
-        <div className="flex items-center gap-2 border-b border-teal-900/10 px-6 py-4 lg:hidden">
+        <a
+          href="https://thetruegage.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 border-b border-teal-900/10 px-6 py-4 transition-opacity hover:opacity-90 lg:hidden"
+        >
           <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
             <Gauge className="h-4 w-4" strokeWidth={2.25} />
           </div>
-          <span className="font-display text-base font-semibold tracking-tight text-teal-900">TrueGage</span>
-        </div>
+          <span className="font-display text-base font-semibold tracking-tight text-teal-900">TheTruegage</span>
+        </a>
 
         <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:px-14 xl:px-20">
           <div className="mx-auto w-full max-w-100">
@@ -245,7 +261,7 @@ function LoginPage() {
             </form>
 
             <p className="mt-8 text-sm text-slate-500">
-              TrueGage is invite only.{" "}
+              TheTruegage is invite only.{" "}
               <span className="font-medium text-primary">Ask your organization admin</span> for
               access.
             </p>
@@ -253,7 +269,7 @@ function LoginPage() {
         </div>
 
         <footer className="px-6 pb-6 text-center text-[11px] text-slate-400 sm:text-left lg:px-14 xl:px-20">
-          © {new Date().getFullYear()} TrueGage. A product by{" "}
+          © {new Date().getFullYear()} TheTruegage. A product by{" "}
           <a
             href="https://pinnakltech.com"
             target="_blank"

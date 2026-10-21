@@ -207,6 +207,23 @@
   }
 }
 
+@utility tg-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.625rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklab, var(--color-accent-foreground) 28%, transparent);
+  background-color: var(--color-accent);
+  padding: 0.2rem 0.7rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent-foreground);
+}
+
 @utility tg-select {
   appearance: none;
   -webkit-appearance: none;
@@ -437,7 +454,7 @@
   animation: tg-login-orb 11s ease-in-out 1.4s infinite;
 }
 
-/* Product tour (driver.js) — align with TrueGage teal */
+/* Product tour (driver.js) — align with TheTruegage teal */
 .tg-driver-popover.driver-popover {
   background: var(--color-card, #fff);
   color: var(--color-foreground, #0f172a);

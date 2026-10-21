@@ -1,4 +1,4 @@
-"""Outbound SMTP helpers for TrueGage notification emails."""
+"""Outbound SMTP helpers for TheTruegage notification emails."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def load_smtp_config(row: AppSettings) -> SmtpConfig:
         password=password,
         use_tls=bool(row.smtp_use_tls),
         from_email=row.smtp_from_email.strip(),
-        from_name=(row.smtp_from_name or "TrueGage").strip() or "TrueGage",
+        from_name=(row.smtp_from_name or "TheTruegage").strip() or "TheTruegage",
     )
 
 
@@ -146,7 +146,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
     name = to_name.strip() or "there"
     safe_name = _escape(name)
     safe_from = _escape(config.from_email)
-    subject = "TrueGage delivery check — you’re connected"
+    subject = "TheTruegage delivery check — you’re connected"
 
     # Match web app stacks from styles.css / __root.tsx
     font_sans = FONT_SANS
@@ -155,12 +155,12 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
 
     text = (
         f"Hi {name},\n\n"
-        "Your TrueGage email delivery check succeeded.\n\n"
+        "Your TheTruegage email delivery check succeeded.\n\n"
         "This temporary message confirms that SMTP is configured correctly and "
         "calibration alerts can reach your team inbox.\n\n"
         f"Sent via: {config.from_email}\n"
         "You can close this message — no action is required.\n\n"
-        "— TrueGage Metrology\n"
+        "— TheTruegage Metrology\n"
     )
 
     html = f"""\
@@ -169,7 +169,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TrueGage delivery check</title>
+  <title>TheTruegage delivery check</title>
 {FONT_LINKS}
   <!--[if mso]>
   <style type="text/css">
@@ -185,7 +185,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px 28px 22px;">
               <div style="font-family:{font_sans};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Metrology Control
+                TheTruegage · Metrology Control
               </div>
               <div style="font-family:{font_display};font-size:26px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;letter-spacing:-0.02em;">
                 Delivery check passed
@@ -201,7 +201,7 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
                 Hi {safe_name},
               </p>
               <p style="margin:0 0 14px;font-family:{font_sans};font-size:15px;line-height:1.6;font-weight:400;color:#cbd5e1;">
-                This is a temporary check from <strong style="font-weight:600;color:#f8fafc;">TrueGage</strong>.
+                This is a temporary check from <strong style="font-weight:600;color:#f8fafc;">TheTruegage</strong>.
                 Receiving it means calibration reminder emails can reach your team from this system.
               </p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#0b1220;border:1px solid #243044;border-radius:10px;">
@@ -221,14 +221,14 @@ def send_test_email(config: SmtpConfig, *, to_email: str, to_name: str = "") -> 
               </table>
               <p style="margin:0;font-family:{font_sans};font-size:13px;line-height:1.55;font-weight:400;color:#94a3b8;">
                 No action needed — you can archive this message. Alarm rules and team recipients
-                are managed in TrueGage Settings.
+                are managed in TheTruegage Settings.
               </p>
             </td>
           </tr>
           <tr>
             <td style="border-top:1px solid #1f2a3c;padding:16px 28px 22px;background:#0d1422;">
               <div style="font-family:{font_sans};font-size:12px;font-weight:500;color:#64748b;">
-                TrueGage · Manufacturing calibration monitoring
+                TheTruegage · Manufacturing calibration monitoring
               </div>
             </td>
           </tr>
@@ -268,11 +268,11 @@ def send_login_credentials_email(
     safe_email = _escape(to_email)
     safe_login = _escape(login_url)
     safe_role = _escape(role_label) if role_label else ""
-    subject = f"Your TrueGage login — {company}"
+    subject = f"Your TheTruegage login — {company}"
 
     text = (
         f"Hi {name},\n\n"
-        f"An administrator at {company} created a TrueGage login for you.\n\n"
+        f"An administrator at {company} created a TheTruegage login for you.\n\n"
         f"Sign in: {login_url}\n"
         f"Email: {to_email}\n"
         f"Temporary password: {temp_password}\n"
@@ -282,7 +282,7 @@ def send_login_credentials_email(
     text += (
         "\nAfter you sign in, open Profile → Security to change your password "
         "(use the temporary password as your current password).\n\n"
-        "— TrueGage\n"
+        "— TheTruegage\n"
     )
 
     role_html = (
@@ -296,7 +296,7 @@ def send_login_credentials_email(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TrueGage login</title>
+  <title>TheTruegage login</title>
 {FONT_LINKS}
 </head>
 <body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
@@ -307,7 +307,7 @@ def send_login_credentials_email(
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
               <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Workspace access
+                TheTruegage · Workspace access
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
                 Your login is ready
@@ -339,7 +339,7 @@ def send_login_credentials_email(
                   <td style="border-radius:10px;background:#0f766e;">
                     <a href="{safe_login}" target="_blank" rel="noopener noreferrer"
                        style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
-                      Open TrueGage
+                      Open TheTruegage
                     </a>
                   </td>
                 </tr>
@@ -379,7 +379,7 @@ def send_overdue_alert_email(
     safe_name = _escape(name)
     safe_cta = _escape(cta_url)
     count = len(items)
-    subject = f"TrueGage — {count} calibration{'s' if count != 1 else ''} overdue"
+    subject = f"TheTruegage — {count} calibration{'s' if count != 1 else ''} overdue"
 
     lines = [
         f"Hi {name},",
@@ -396,7 +396,7 @@ def send_overdue_alert_email(
             "",
             f"View overdue equipment: {cta_url}",
             "",
-            "— TrueGage Metrology",
+            "— TheTruegage Metrology",
         ]
     )
     text = "\n".join(lines)
@@ -437,7 +437,7 @@ def send_overdue_alert_email(
           <tr>
             <td style="background:linear-gradient(135deg,#b91c1c 0%,#7f1d1d 55%,#450a0a 100%);padding:28px;">
               <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Urgent compliance
+                TheTruegage · Urgent compliance
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:24px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;letter-spacing:-0.02em;">
                 {count} calibration{'s' if count != 1 else ''} overdue
@@ -478,7 +478,7 @@ def send_overdue_alert_email(
           <tr>
             <td style="border-top:1px solid #1f2a3c;padding:16px 28px 22px;background:#0d1422;">
               <div style="font-family:{FONT_SANS};font-size:12px;font-weight:500;color:#64748b;">
-                TrueGage · Manufacturing calibration monitoring
+                TheTruegage · Manufacturing calibration monitoring
               </div>
             </td>
           </tr>
@@ -517,7 +517,7 @@ def send_due_reminder_email(
     safe_cta = _escape(cta_url)
     safe_window = _escape(window_label)
     count = len(items)
-    subject = f"TrueGage — {count} calibration{'s' if count != 1 else ''} due ({window_label})"
+    subject = f"TheTruegage — {count} calibration{'s' if count != 1 else ''} due ({window_label})"
 
     lines = [
         f"Hi {name},",
@@ -532,9 +532,9 @@ def send_due_reminder_email(
             "",
             "Please schedule verification in advance.",
             "",
-            f"Open TrueGage: {cta_url}",
+            f"Open TheTruegage: {cta_url}",
             "",
-            "— TrueGage Metrology",
+            "— TheTruegage Metrology",
         ]
     )
     text = "\n".join(lines)
@@ -575,7 +575,7 @@ def send_due_reminder_email(
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
               <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Due soon
+                TheTruegage · Due soon
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
                 Calibrations due ({safe_window})
@@ -653,12 +653,12 @@ def send_daily_digest_email(
     safe_cta = _escape(cta_url)
     safe_org = _escape((org_name or "Your organization").strip() or "Your organization")
     safe_prefs = _escape(preferences_url or cta_url)
-    subject = f"TrueGage — Daily calibration digest ({total} item{'s' if total != 1 else ''})"
+    subject = f"TheTruegage — Daily calibration digest ({total} item{'s' if total != 1 else ''})"
 
     lines = [
         f"Hi {name},",
         "",
-        f"Your daily calibration digest from {org_name or 'TrueGage'} ({total} item{'s' if total != 1 else ''}):",
+        f"Your daily calibration digest from {org_name or 'TheTruegage'} ({total} item{'s' if total != 1 else ''}):",
         "",
     ]
     for title, items in sections:
@@ -677,7 +677,7 @@ def send_daily_digest_email(
         lines.append("")
     lines.extend(
         [
-            f"Open TrueGage: {cta_url}",
+            f"Open TheTruegage: {cta_url}",
             "",
         ]
     )
@@ -687,7 +687,7 @@ def send_daily_digest_email(
         lines.append(
             f"You received this because you are a notification recipient for {org_name or 'your organization'}."
         )
-    lines.extend(["", f"— {org_name or 'TrueGage'}"])
+    lines.extend(["", f"— {org_name or 'TheTruegage'}"])
     text = "\n".join(lines)
 
     sections_html = ""
@@ -750,7 +750,7 @@ def send_daily_digest_email(
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
               <div style="font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Daily digest
+                TheTruegage · Daily digest
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
                 {total} calibration{'s' if total != 1 else ''} need attention
@@ -776,7 +776,7 @@ def send_daily_digest_email(
               </table>
               <div style="margin-top:22px;font-size:12px;line-height:1.5;color:#64748b;">
                 {footer_note}<br/>
-                Sent by {safe_org} via TrueGage.
+                Sent by {safe_org} via TheTruegage.
               </div>
             </td>
           </tr>
@@ -815,7 +815,7 @@ def send_weekly_digest_email(
     safe_cta = _escape(cta_url)
     safe_week = _escape(week_label)
     count = len(items)
-    subject = f"TrueGage — Weekly digest ({week_label}): {count} upcoming"
+    subject = f"TheTruegage — Weekly digest ({week_label}): {count} upcoming"
 
     lines = [
         f"Hi {name},",
@@ -825,7 +825,7 @@ def send_weekly_digest_email(
     ]
     for row in items:
         lines.append(f"• {row.name} ({row.tag}) — due {row.due_date} ({row.days_until}d)")
-    lines.extend(["", f"Open TrueGage: {cta_url}", "", "— TrueGage Metrology"])
+    lines.extend(["", f"Open TheTruegage: {cta_url}", "", "— TheTruegage Metrology"])
     text = "\n".join(lines)
 
     rows_html = ""
@@ -858,7 +858,7 @@ def send_weekly_digest_email(
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
               <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Weekly digest
+                TheTruegage · Weekly digest
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
                 Upcoming calibrations · {safe_week}
@@ -879,7 +879,7 @@ def send_weekly_digest_email(
                   <td style="border-radius:10px;background:#0f766e;">
                     <a href="{safe_cta}" target="_blank" rel="noopener noreferrer"
                        style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
-                      Open TrueGage
+                      Open TheTruegage
                     </a>
                   </td>
                 </tr>
@@ -937,7 +937,7 @@ def load_system_smtp_config(db: Session | None = None) -> SmtpConfig:
                 password=password,
                 use_tls=bool(row.smtp_use_tls),
                 from_email=row.smtp_from_email.strip(),
-                from_name=(row.smtp_from_name or "TrueGage").strip() or "TrueGage",
+                from_name=(row.smtp_from_name or "TheTruegage").strip() or "TheTruegage",
             )
 
     s = get_settings()
@@ -953,7 +953,7 @@ def load_system_smtp_config(db: Session | None = None) -> SmtpConfig:
         password=s.system_smtp_password,
         use_tls=bool(s.system_smtp_use_tls),
         from_email=s.system_smtp_from_email.strip(),
-        from_name=(s.system_smtp_from_name or "TrueGage").strip() or "TrueGage",
+        from_name=(s.system_smtp_from_name or "TheTruegage").strip() or "TheTruegage",
     )
 
 
@@ -998,7 +998,7 @@ def send_company_welcome_email(
     login_url: str,
     db: Session | None = None,
 ) -> None:
-    """TrueGage → new company admin welcome / credentials email."""
+    """TheTruegage → new company admin welcome / credentials email."""
     config = load_system_smtp_config(db)
     name = (to_name or "").strip() or "there"
     company = (company_name or "").strip() or "your company"
@@ -1006,17 +1006,17 @@ def send_company_welcome_email(
     safe_company = _escape(company)
     safe_email = _escape(to_email)
     safe_login = _escape(login_url)
-    subject = f"Welcome to TrueGage — {company} workspace is ready"
+    subject = f"Welcome to TheTruegage — {company} workspace is ready"
 
     text = (
         f"Hi {name},\n\n"
-        f"TrueGage has provisioned a calibration workspace for {company}.\n\n"
+        f"TheTruegage has provisioned a calibration workspace for {company}.\n\n"
         f"Sign in: {login_url}\n"
         f"Email: {to_email}\n"
         f"Temporary password: {temp_password}\n\n"
         "After you sign in, open Profile → Security to change your password "
         "(use the temporary password as your current password).\n\n"
-        "— TrueGage Staff\n"
+        "— TheTruegage Staff\n"
     )
 
     html = f"""\
@@ -1025,7 +1025,7 @@ def send_company_welcome_email(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Welcome to TrueGage</title>
+  <title>Welcome to TheTruegage</title>
 {FONT_LINKS}
 </head>
 <body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
@@ -1036,7 +1036,7 @@ def send_company_welcome_email(
           <tr>
             <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
               <div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
-                TrueGage · Workspace onboarding
+                TheTruegage · Workspace onboarding
               </div>
               <div style="font-family:{FONT_DISPLAY};font-size:24px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
                 Your company workspace is ready
@@ -1050,7 +1050,7 @@ def send_company_welcome_email(
             <td style="padding:28px;">
               <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#e5e7eb;">Hi {safe_name},</p>
               <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#cbd5e1;">
-                The TrueGage team has created an administrator account for your calibration workspace.
+                TheTruegage team has created an administrator account for your calibration workspace.
                 Use the credentials below for your first sign-in, then open
                 <strong style="color:#e5e7eb;"> Profile → Security </strong>
                 to set a new password.
@@ -1068,7 +1068,7 @@ def send_company_welcome_email(
                   <td style="border-radius:10px;background:#0f766e;">
                     <a href="{safe_login}" target="_blank" rel="noopener noreferrer"
                        style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
-                      Open TrueGage
+                      Open TheTruegage
                     </a>
                   </td>
                 </tr>
@@ -1077,7 +1077,7 @@ def send_company_welcome_email(
           </tr>
           <tr>
             <td style="border-top:1px solid #1f2a3c;padding:16px 28px 22px;background:#0d1422;">
-              <div style="font-size:12px;color:#64748b;">TrueGage Staff · Onboarding</div>
+              <div style="font-size:12px;color:#64748b;">TheTruegage Staff · Onboarding</div>
             </td>
           </tr>
         </table>

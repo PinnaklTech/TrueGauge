@@ -39,7 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/workspace/$slug/profile")({
-  head: () => ({ meta: [{ title: "Profile · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Profile · TheTruegage" }] }),
   component: ProfilePage,
 });
 

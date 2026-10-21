@@ -113,7 +113,7 @@ export function OnboardingProfileDialog({ open, user, onCompleted }: Props) {
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>Welcome to TrueGage</DialogTitle>
+          <DialogTitle>Welcome to TheTruegage</DialogTitle>
           <DialogDescription>
             Set up your profile so reminders and your workspace identity look right. This only takes a
             minute.

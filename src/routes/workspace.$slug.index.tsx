@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
 import { useMemo, useState, type CSSProperties } from "react";
 
 export const Route = createFileRoute("/workspace/$slug/")({
-  head: () => ({ meta: [{ title: "Control Center · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Control Center · TheTruegage" }] }),
   component: Dashboard,
 });
 
@@ -181,9 +181,9 @@ function Dashboard() {
           )}
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-              TrueGage Control Center
+              TheTruegage Control Center
             </h1>
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <span className="tg-count-badge">
               Live Compliance: {readiness}%
             </span>
           </div>
@@ -287,7 +287,7 @@ function Dashboard() {
               ? quotaBytes > 0
                 ? `Storage ${formatDashboardBytes(usedBytes)} of 2 GB`
                 : "Private PDF certificate vault"
-              : "Contact TrueGage to enable certificate storage"
+              : "Contact TheTruegage to enable certificate storage"
           }
           icon={<FileCheck2 className="h-4 w-4" />}
           tone={storageEnabled ? "success" : "default"}

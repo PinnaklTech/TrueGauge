@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("smtp_password_encrypted", sa.Text(), nullable=True),
         sa.Column("smtp_use_tls", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("smtp_from_email", sa.String(length=255), nullable=True),
-        sa.Column("smtp_from_name", sa.String(length=255), nullable=False, server_default="TrueGage"),
+        sa.Column("smtp_from_name", sa.String(length=255), nullable=False, server_default="TheTruegage"),
         sa.Column("smtp_last_error", sa.Text(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )

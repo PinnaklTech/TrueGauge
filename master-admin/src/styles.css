@@ -2,7 +2,7 @@
   color-scheme: light;
   --radius: 8px;
 
-  /* Match main TrueGage app (light) */
+  /* Match main TheTruegage app (light) */
   --bg: oklch(0.985 0.002 250);
   --bg-elevated: oklch(1 0 0);
   --bg-panel: oklch(1 0 0);
@@ -32,7 +32,7 @@
 
 .dark {
   color-scheme: dark;
-  /* Match main TrueGage app (dark industrial) */
+  /* Match main TheTruegage app (dark industrial) */
   --bg: #09090b;
   --bg-elevated: #111113;
   --bg-panel: #111113;

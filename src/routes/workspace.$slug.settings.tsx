@@ -112,7 +112,7 @@ type SettingsSection = (typeof sections)[number]["id"];
 const SECTION_IDS = new Set<string>(sections.map((s) => s.id));
 
 export const Route = createFileRoute("/workspace/$slug/settings")({
-  head: () => ({ meta: [{ title: "Settings · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Settings · TheTruegage" }] }),
   validateSearch: (search: Record<string, unknown>): { section?: SettingsSection } => {
     if (typeof search.section === "string" && SECTION_IDS.has(search.section)) {
       return { section: search.section as SettingsSection };
@@ -226,7 +226,7 @@ function SettingsPage() {
           <h1 className="font-display text-xl font-semibold tracking-tight text-foreground md:text-2xl">
             Settings
           </h1>
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+          <span className="tg-count-badge">
             Owner: {ownerName}
           </span>
         </div>
@@ -1511,7 +1511,7 @@ function PeopleAccessPanel() {
 
       <SettingsBlock
         title="Login users"
-        description="People with TrueGage accounts. Share credentials securely or email them when SMTP is configured."
+        description="People with TheTruegage accounts. Share credentials securely or email them when SMTP is configured."
       >
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Input
@@ -2091,7 +2091,7 @@ function EmailDeliveryPanel({
   const [password, setPassword] = useState("");
   const [useTls, setUseTls] = useState(true);
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState("TrueGage");
+  const [fromName, setFromName] = useState("TheTruegage");
 
   const refresh = async () => {
     try {
@@ -2102,7 +2102,7 @@ function EmailDeliveryPanel({
       setUsername(s.smtp_username ?? "");
       setUseTls(s.smtp_use_tls);
       setFromEmail(s.smtp_from_email ?? "");
-      setFromName(s.smtp_from_name ?? "TrueGage");
+      setFromName(s.smtp_from_name ?? "TheTruegage");
       setPassword("");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not load email settings");
@@ -2134,7 +2134,7 @@ function EmailDeliveryPanel({
         smtp_password: password.trim() || undefined,
         smtp_use_tls: useTls,
         smtp_from_email: fromEmail.trim(),
-        smtp_from_name: fromName.trim() || "TrueGage",
+        smtp_from_name: fromName.trim() || "TheTruegage",
       });
       setStatus(saved);
       setPassword("");
@@ -2177,7 +2177,7 @@ function EmailDeliveryPanel({
                   id="smtp-from-name"
                   value={fromName}
                   onChange={(e) => setFromName(e.target.value)}
-                  placeholder="TrueGage"
+                  placeholder="TheTruegage"
                 />
               </Field>
               <Field label="From email" htmlFor="smtp-from-email">
@@ -2512,7 +2512,7 @@ function OdooIntegrationPanel() {
       <div>
         <h2 className="font-display text-base font-semibold text-foreground">ERP Integrations</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          Optional: import equipment from Odoo Online into TrueGage. TrueGage stays the app of
+          Optional: import equipment from Odoo Online into TheTruegage. TheTruegage stays the app of
           record for edits — nothing is written back to Odoo. No Odoo? Use{" "}
           <Link
             to="/workspace/$slug/equipment"
@@ -2569,7 +2569,7 @@ function OdooIntegrationPanel() {
 
       <SettingsBlock
         title="Odoo credentials"
-        description="Optional. Stored encrypted on the server. Import adds new equipment only — existing TrueGage records are never overwritten or deleted."
+        description="Optional. Stored encrypted on the server. Import adds new equipment only — existing TheTruegage records are never overwritten or deleted."
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">

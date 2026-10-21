@@ -32,7 +32,7 @@ services:
       SYSTEM_SMTP_USERNAME: ${SYSTEM_SMTP_USERNAME:-}
       SYSTEM_SMTP_PASSWORD: ${SYSTEM_SMTP_PASSWORD:-}
       SYSTEM_SMTP_FROM_EMAIL: ${SYSTEM_SMTP_FROM_EMAIL:-}
-      SYSTEM_SMTP_FROM_NAME: ${SYSTEM_SMTP_FROM_NAME:-TrueGage}
+      SYSTEM_SMTP_FROM_NAME: ${SYSTEM_SMTP_FROM_NAME:-TheTruegage}
       SYSTEM_SMTP_USE_TLS: ${SYSTEM_SMTP_USE_TLS:-true}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:8081,http://127.0.0.1:5173,http://127.0.0.1:8080,http://127.0.0.1:8081}
       ODOO_MODEL: ${ODOO_MODEL:-maintenance.equipment}
@@ -41,7 +41,7 @@ services:
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
-      R2_BUCKET: ${R2_BUCKET:-truegage}
+      R2_BUCKET: ${R2_BUCKET:-TheTruegage}
       R2_ENDPOINT_URL: ${R2_ENDPOINT_URL:-}
       R2_REGION: ${R2_REGION:-auto}
     depends_on:

@@ -57,7 +57,7 @@ class Tenant(Base):
 
 
 class PlatformSettings(Base):
-    """Singleton platform-wide settings (id=1), e.g. TrueGage system SMTP."""
+    """Singleton platform-wide settings (id=1), e.g. TheTruegage system SMTP."""
 
     __tablename__ = "platform_settings"
 
@@ -68,7 +68,7 @@ class PlatformSettings(Base):
     smtp_password_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     smtp_use_tls: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     smtp_from_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    smtp_from_name: Mapped[str] = mapped_column(String(255), default="TrueGage", server_default="TrueGage")
+    smtp_from_name: Mapped[str] = mapped_column(String(255), default="TheTruegage", server_default="TheTruegage")
     smtp_last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -335,7 +335,7 @@ class NotificationRecipient(Base):
     name: Mapped[str] = mapped_column(String(255), default="")
     role: Mapped[str] = mapped_column(String(64), default="member", server_default="member")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    # True = customer/org recipient; False = TrueGage staff or external support contacts
+    # True = customer/org recipient; False = TheTruegage staff or external support contacts
     org_member: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

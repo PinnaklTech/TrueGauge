@@ -272,7 +272,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
   const steps: TourStep[] = [
     {
       popover: {
-        title: "Welcome to TrueGage",
+        title: "Welcome to TheTruegage",
         description:
           "A quick tour of Scan, equipment, reports, reminders, and more. Skip for now pauses — resume anytime from the top bar.",
         align: "center",

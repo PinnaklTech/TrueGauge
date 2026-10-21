@@ -315,7 +315,7 @@ def sync_login_users_to_notification_recipients(db: Session, tenant_id: int) -> 
         upsert_recipient_for_login_user(db, user)
 
     # Drop org-member recipient rows that no longer have a login (legacy duplicates).
-    # Keep org_member=False rows (external / TrueGage contacts) untouched.
+    # Keep org_member=False rows (external / TheTruegage contacts) untouched.
     orphans = (
         db.query(NotificationRecipient)
         .filter(
@@ -751,7 +751,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)) -> AuthTokenOut:
     """Public registration is disabled — accounts are invite / admin-created only."""
     raise HTTPException(
         status_code=403,
-        detail="TrueGage is invite only. Ask your organization admin to create your login.",
+        detail="TheTruegage is invite only. Ask your organization admin to create your login.",
     )
 
 
@@ -839,7 +839,7 @@ def staff_login(body: StaffLoginIn, request: Request, db: Session = Depends(get_
         db.commit()
         raise HTTPException(
             status_code=403,
-            detail="Master Admin is for TrueGage staff only. Workspace users cannot sign in here.",
+            detail="Master Admin is for TheTruegage staff only. Workspace users cannot sign in here.",
         )
 
     if not user.active:
@@ -1573,7 +1573,7 @@ def _platform_smtp_out(db: Session) -> PlatformSmtpOut:
             smtp_username=row.smtp_username,
             smtp_use_tls=bool(row.smtp_use_tls),
             smtp_from_email=row.smtp_from_email,
-            smtp_from_name=row.smtp_from_name or "TrueGage",
+            smtp_from_name=row.smtp_from_name or "TheTruegage",
             has_password=True,
             last_error=row.smtp_last_error,
             env_fallback_ready=env_ready,
@@ -1588,7 +1588,7 @@ def _platform_smtp_out(db: Session) -> PlatformSmtpOut:
             smtp_username=s.system_smtp_username or None,
             smtp_use_tls=bool(s.system_smtp_use_tls),
             smtp_from_email=s.system_smtp_from_email or None,
-            smtp_from_name=s.system_smtp_from_name or "TrueGage",
+            smtp_from_name=s.system_smtp_from_name or "TheTruegage",
             has_password=True,
             last_error=None,
             env_fallback_ready=True,
@@ -1601,7 +1601,7 @@ def _platform_smtp_out(db: Session) -> PlatformSmtpOut:
         smtp_username=row.smtp_username,
         smtp_use_tls=bool(row.smtp_use_tls),
         smtp_from_email=row.smtp_from_email,
-        smtp_from_name=row.smtp_from_name or "TrueGage",
+        smtp_from_name=row.smtp_from_name or "TheTruegage",
         has_password=bool(row.smtp_password_encrypted),
         last_error=row.smtp_last_error,
         env_fallback_ready=False,
@@ -1631,7 +1631,7 @@ def save_platform_smtp(
     row.smtp_username = (body.smtp_username or "").strip() or None
     row.smtp_use_tls = True if get_settings().is_production else bool(body.smtp_use_tls)
     row.smtp_from_email = from_email
-    row.smtp_from_name = (body.smtp_from_name or "TrueGage").strip() or "TrueGage"
+    row.smtp_from_name = (body.smtp_from_name or "TheTruegage").strip() or "TheTruegage"
     if body.smtp_password and body.smtp_password.strip():
         row.smtp_password_encrypted = encrypt_secret(body.smtp_password.strip())
     elif not row.smtp_password_encrypted:
@@ -1667,14 +1667,14 @@ def test_platform_smtp(
     msg = build_message(
         config=config,
         to_email=to_email,
-        to_name="TrueGage Staff",
-        subject="TrueGage platform SMTP check",
+        to_name="TheTruegage Staff",
+        subject="TheTruegage platform SMTP check",
         text_body=(
-            "This is a test message from the TrueGage staff console.\n"
+            "This is a test message from TheTruegage staff console.\n"
             "Platform SMTP is working.\n"
         ),
         html_body=(
-            "<p>This is a test message from the <strong>TrueGage</strong> staff console.</p>"
+            "<p>This is a test message from the <strong>TheTruegage</strong> staff console.</p>"
             "<p>Platform SMTP is working.</p>"
         ),
     )
@@ -2114,7 +2114,7 @@ def platform_resend_welcome_email(
     audit = EmailAuditLog(
         tenant_id=tenant_id,
         kind="welcome",
-        subject=f"Welcome to TrueGage — {tenant.name} workspace is ready",
+        subject=f"Welcome to TheTruegage — {tenant.name} workspace is ready",
         to_email=target.email,
         to_name=target.full_name or "",
         status=welcome_status,
@@ -2662,7 +2662,7 @@ def create_tenant(
             EmailAuditLog(
                 tenant_id=tenant.id,
                 kind="welcome",
-                subject=f"Welcome to TrueGage — {name} workspace is ready",
+                subject=f"Welcome to TheTruegage — {name} workspace is ready",
                 to_email=email,
                 to_name=full_name,
                 status=welcome_status if welcome_status != "skipped" else "failed",
@@ -2848,7 +2848,7 @@ def _send_user_credentials_email(
             detail="Configure Email Delivery (SMTP) before sending login credentials",
         )
     tenant = db.get(Tenant, tenant_id)
-    company = (settings_row.company_name or "").strip() or (tenant.name if tenant else "TrueGage")
+    company = (settings_row.company_name or "").strip() or (tenant.name if tenant else "TheTruegage")
     login_url = f"{get_settings().app_public_url.rstrip('/')}/auth/login"
     role_label = (user.role or "").replace("_", " ").title()
     try:
@@ -2874,7 +2874,7 @@ def _send_user_credentials_email(
         db,
         tenant_id=tenant_id,
         kind="credentials",
-        subject=f"Your TrueGage login — {company}",
+        subject=f"Your TheTruegage login — {company}",
         to_email=user.email,
         to_name=user.full_name or "",
         status=status,
@@ -3511,12 +3511,12 @@ def list_reminder_logs(
                 return f"In-app: {n} calibration{plural} due ({window[kind]})"
             return f"In-app: {kind} ({n})"
         if kind == "overdue_daily":
-            return f"TrueGage — {n} calibration{plural} overdue"
+            return f"TheTruegage — {n} calibration{plural} overdue"
         if kind == "weekly_digest":
-            return f"TrueGage — Weekly digest: {n} upcoming"
+            return f"TheTruegage — Weekly digest: {n} upcoming"
         if kind in window:
-            return f"TrueGage — {n} calibration{plural} due ({window[kind]})"
-        return f"TrueGage — {kind} ({n})"
+            return f"TheTruegage — {n} calibration{plural} due ({window[kind]})"
+        return f"TheTruegage — {kind} ({n})"
 
     # Aggregate: one row per recipient × kind × channel × day
     groups: dict[tuple[str, str, str, str], list[ReminderDispatch]] = {}

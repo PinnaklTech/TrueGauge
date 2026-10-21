@@ -897,7 +897,7 @@ function MembersTab({
       {welcomeUser && (
         <PasswordDialog
           title="Resend welcome email"
-          subtitle={`Sets a new temporary password and emails ${welcomeUser.email} from TrueGage.`}
+          subtitle={`Sets a new temporary password and emails ${welcomeUser.email} from TheTruegage.`}
           password={tempPassword}
           setPassword={setTempPassword}
           error={formError}

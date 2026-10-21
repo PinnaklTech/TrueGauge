@@ -15,7 +15,7 @@ _redoc = "/redoc" if (settings.debug or not settings.is_production) else None
 _openapi = "/openapi.json" if (settings.debug or not settings.is_production) else None
 
 app = FastAPI(
-    title="TrueGage API",
+    title="TheTruegage API",
     description="Calibration notification platform — Odoo integration & equipment cache",
     version="0.1.0",
     docs_url=_docs,
@@ -68,7 +68,7 @@ app.include_router(accounts_router, prefix="/api")
 
 @app.get("/")
 def root() -> dict[str, str]:
-    payload = {"name": "TrueGage API", "status": "ok"}
+    payload = {"name": "TheTruegage API", "status": "ok"}
     if _docs:
         payload["docs"] = "/docs"
     return payload

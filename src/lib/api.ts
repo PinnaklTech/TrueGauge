@@ -395,14 +395,14 @@ async function downloadAuthenticatedFile(
 export async function downloadEquipmentTemplate() {
   return downloadAuthenticatedFile(
     "/api/equipment/import/template.csv",
-    "truegage-equipment-template.csv",
+    "TheTruegage-equipment-template.csv",
   );
 }
 
 export async function exportEquipmentCsv() {
   return downloadAuthenticatedFile(
     "/api/equipment/export.csv",
-    "truegage-equipment-export.csv",
+    "TheTruegage-equipment-export.csv",
   );
 }
 

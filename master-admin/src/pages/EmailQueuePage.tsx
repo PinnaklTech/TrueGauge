@@ -159,7 +159,7 @@ function PlatformSmtpPanel() {
   const [password, setPassword] = useState("");
   const [useTls, setUseTls] = useState(true);
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState("TrueGage");
+  const [fromName, setFromName] = useState("TheTruegage");
   const [testOpen, setTestOpen] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [msg, setMsg] = useState("");
@@ -172,7 +172,7 @@ function PlatformSmtpPanel() {
     setUsername(data.smtp_username || "");
     setUseTls(data.smtp_use_tls);
     setFromEmail(data.smtp_from_email || "");
-    setFromName(data.smtp_from_name || "TrueGage");
+    setFromName(data.smtp_from_name || "TheTruegage");
     setPassword("");
   }, [data]);
 
@@ -192,7 +192,7 @@ function PlatformSmtpPanel() {
         smtp_password: password.trim() || undefined,
         smtp_use_tls: useTls,
         smtp_from_email: fromEmail.trim(),
-        smtp_from_name: fromName.trim() || "TrueGage",
+        smtp_from_name: fromName.trim() || "TheTruegage",
       });
     },
     onSuccess: () => {
@@ -267,7 +267,7 @@ function PlatformSmtpPanel() {
                   id="smtp-from-name"
                   value={fromName}
                   onChange={(e) => setFromName(e.target.value)}
-                  placeholder="TrueGage"
+                  placeholder="TheTruegage"
                 />
               </div>
               <div className="field">

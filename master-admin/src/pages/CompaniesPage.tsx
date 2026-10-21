@@ -247,7 +247,7 @@ export function CompaniesPage() {
             <h3>Onboard company</h3>
             <p>
               Creates the tenant workspace and a required company admin. Optionally emails login details from
-              TrueGage to the client.
+              TheTruegage to the client.
             </p>
             {formError && <p className="error">{formError}</p>}
             <div className="field">
@@ -324,7 +324,7 @@ export function CompaniesPage() {
                 checked={sendWelcome}
                 onChange={(e) => setSendWelcome(e.target.checked)}
               />
-              Send welcome email from TrueGage to this admin
+              Send welcome email from TheTruegage to this admin
             </label>
             <div className="row" style={{ justifyContent: "flex-end" }}>
               <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>

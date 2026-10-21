@@ -472,7 +472,7 @@ def download_equipment_import_template(
         content=content,
         media_type="text/csv; charset=utf-8",
         headers={
-            "Content-Disposition": 'attachment; filename="truegage-equipment-template.csv"',
+            "Content-Disposition": 'attachment; filename="TheTruegage-equipment-template.csv"',
             "Cache-Control": "no-store",
         },
     )
@@ -506,7 +506,7 @@ def export_equipment_csv(
         content=content,
         media_type="text/csv; charset=utf-8",
         headers={
-            "Content-Disposition": 'attachment; filename="truegage-equipment-export.csv"',
+            "Content-Disposition": 'attachment; filename="TheTruegage-equipment-export.csv"',
             "Cache-Control": "no-store",
             "X-Export-Rows": str(len(rows)),
         },
@@ -608,7 +608,7 @@ def get_equipment_labels(
 
     settings_row = get_or_create_settings(db, ctx.tenant_id)
     tenant = db.get(Tenant, ctx.tenant_id)
-    org_name = (settings_row.company_name or "").strip() or (tenant.name if tenant else "") or "TrueGage"
+    org_name = (settings_row.company_name or "").strip() or (tenant.name if tenant else "") or "TheTruegage"
 
     return EquipmentLabelsOut(
         items=[
@@ -1398,7 +1398,7 @@ def _email_settings_out(row) -> EmailSettingsOut:
         smtp_username=row.smtp_username,
         smtp_use_tls=bool(row.smtp_use_tls),
         smtp_from_email=row.smtp_from_email,
-        smtp_from_name=row.smtp_from_name or "TrueGage",
+        smtp_from_name=row.smtp_from_name or "TheTruegage",
         has_password=bool(row.smtp_password_encrypted),
         last_error=row.smtp_last_error,
     )
@@ -1428,7 +1428,7 @@ def save_email_settings(
     row.smtp_username = (body.smtp_username or "").strip() or None
     row.smtp_use_tls = True if get_settings().is_production else bool(body.smtp_use_tls)
     row.smtp_from_email = from_email
-    row.smtp_from_name = (body.smtp_from_name or "TrueGage").strip() or "TrueGage"
+    row.smtp_from_name = (body.smtp_from_name or "TheTruegage").strip() or "TheTruegage"
     if body.smtp_password and body.smtp_password.strip():
         row.smtp_password_encrypted = encrypt_secret(body.smtp_password.strip())
     elif not row.smtp_password_encrypted:
@@ -1488,7 +1488,7 @@ def send_email_check(
                 db,
                 tenant_id=ctx.tenant_id,
                 kind="test_check",
-                subject="TrueGage — SMTP check",
+                subject="TheTruegage — SMTP check",
                 to_email=member.email,
                 to_name=member.name or "",
                 status="sent",
@@ -1509,7 +1509,7 @@ def send_email_check(
                 db,
                 tenant_id=ctx.tenant_id,
                 kind="test_check",
-                subject="TrueGage — SMTP check",
+                subject="TheTruegage — SMTP check",
                 to_email=member.email,
                 to_name=member.name or "",
                 status="failed",
@@ -1594,13 +1594,13 @@ def send_overdue_alert(
     if not members:
         raise HTTPException(status_code=400, detail="Select at least one team member")
 
-    # Non-admins may only email organization members (not TrueGage staff contacts)
+    # Non-admins may only email organization members (not TheTruegage staff contacts)
     if not is_org_admin_role(ctx.user.role):
         blocked = [m for m in members if not m.org_member]
         if blocked:
             raise HTTPException(
                 status_code=403,
-                detail="You can only send to organization members. Ask an admin to email TrueGage team contacts.",
+                detail="You can only send to organization members. Ask an admin to email TheTruegage team contacts.",
             )
         members = [m for m in members if m.org_member]
         if not members:
@@ -1616,7 +1616,7 @@ def send_overdue_alert(
     results: list[EmailTestRecipientResult] = []
     sent = 0
     failed = 0
-    subject = f"TrueGage — {len(items)} calibration{'s' if len(items) != 1 else ''} overdue"
+    subject = f"TheTruegage — {len(items)} calibration{'s' if len(items) != 1 else ''} overdue"
     tenant = db.get(Tenant, ctx.tenant_id)
     cta_url = get_settings().workspace_equipment_url(
         tenant.slug if tenant else "",

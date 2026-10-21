@@ -28,7 +28,7 @@ from app.services.pdf_report_layout import (
     MonthBar,
     ReportChrome,
     TableColumn,
-    TrueGageReportPDF,
+    TheTruegageReportPDF,
     output_pdf_bytes,
 )
 
@@ -69,7 +69,7 @@ ROLE_LABELS: dict[str, str] = {
     "qa": "QA",
     "technician": "Technician",
     "member": "Member",
-    "platform_admin": "Thetruegage Admin",
+    "platform_admin": "TheTruegage Admin",
 }
 
 
@@ -493,7 +493,7 @@ def build_pdf(
         report_id=report_id,
         generated_label=generated_label,
     )
-    pdf = TrueGageReportPDF(chrome)
+    pdf = TheTruegageReportPDF(chrome)
     pdf.add_page()
 
     title_map = {

@@ -49,7 +49,7 @@ import {
 } from "recharts";
 
 export const Route = createFileRoute("/workspace/$slug/reports")({
-  head: () => ({ meta: [{ title: "Reports · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Reports · TheTruegage" }] }),
   component: ReportsPage,
 });
 
@@ -237,7 +237,7 @@ function ReportsPage() {
           </h2>
           {equipment.length === 0 ? (
             <EmptyNote>
-              No equipment in TrueGage yet. Readiness is calculated from calibrated vs active assets
+              No equipment in TheTruegage yet. Readiness is calculated from calibrated vs active assets
               once you add equipment or import from Odoo.
             </EmptyNote>
           ) : (
@@ -443,7 +443,7 @@ function ReportsPage() {
           Generate &amp; download report
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Thetruegage builds an audit-ready PDF from live workspace data. The file is named after its
+          TheTruegage builds an audit-ready PDF from live workspace data. The file is named after its
           Report ID (for example TG-RPT-20261021-0142.pdf). The last 3 PDFs are kept here for
           re-download.
         </p>

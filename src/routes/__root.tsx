@@ -97,9 +97,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "TrueGage — Calibration Made Visible" },
+      { title: "TheTruegage — Calibration Made Visible" },
       { name: "description", content: "Cloud calibration monitoring for manufacturing, pharma, labs, and medical device teams. Track equipment, manage certificates, stay ISO-compliant." },
-      { property: "og:title", content: "TrueGage — Calibration Made Visible" },
+      { property: "og:title", content: "TheTruegage — Calibration Made Visible" },
       { property: "og:description", content: "Cloud calibration monitoring & notifications for regulated industries." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

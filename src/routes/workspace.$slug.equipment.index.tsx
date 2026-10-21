@@ -66,7 +66,7 @@ type EquipmentSearch = {
 const STATUS_VALUES = new Set<string>(Object.keys(statusLabel));
 
 export const Route = createFileRoute("/workspace/$slug/equipment/")({
-  head: () => ({ meta: [{ title: "Equipment · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Equipment · TheTruegage" }] }),
   validateSearch: (search: Record<string, unknown>): EquipmentSearch => {
     const result: EquipmentSearch = {};
     const openCreate =
@@ -296,7 +296,7 @@ function EquipmentPage() {
             <h1 className="font-display text-xl font-semibold tracking-tight text-foreground md:text-2xl">
               {isMobile ? "Equipment" : "Equipment Register & Technical Records"}
             </h1>
-            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+            <span className="tg-count-badge">
               {isFetching && !items.length ? "…" : `${items.length}`}
             </span>
           </div>

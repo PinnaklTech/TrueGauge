@@ -61,7 +61,7 @@ function parseDate(value: string) {
 type DetailTab = "overview" | "history" | "documents" | "label";
 
 export const Route = createFileRoute("/workspace/$slug/equipment/$id")({
-  head: () => ({ meta: [{ title: "Equipment · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Equipment · TheTruegage" }] }),
   validateSearch: (search: Record<string, unknown>): { from?: "scan" } => {
     if (search.from === "scan") return { from: "scan" };
     return {};
@@ -747,7 +747,7 @@ function DocumentsPanel({
       </div>
       {!storageEnabled ? (
         <p className="px-5 py-6 text-center text-sm text-muted-foreground">
-          Certificate vault is not included in your plan. Contact TrueGage to enable document
+          Certificate vault is not included in your plan. Contact TheTruegage to enable document
           storage.
         </p>
       ) : (

@@ -1,4 +1,4 @@
-"""Shared Thetruegage professional PDF report layout (fpdf2).
+"""Shared TheTruegage professional PDF report layout (fpdf2).
 
 Brand chrome uses the product teal theme and the official logo asset.
 """
@@ -13,7 +13,7 @@ from typing import Sequence
 from fpdf import FPDF
 from fpdf.enums import Corner, RenderStyle
 
-# --- Design tokens (hex -> RGB) — Thetruegage teal theme ----------------------
+# --- Design tokens (hex -> RGB) — TheTruegage teal theme ----------------------
 
 BRAND = (15, 118, 110)  # #0F766E primary
 TEAL = (13, 148, 136)  # #0D9488 accent
@@ -34,7 +34,7 @@ WHITE = (255, 255, 255)
 # Alias used by KPI cards / headings that previously used navy
 NAVY = BRAND
 
-BRAND_NAME = "Thetruegage"
+BRAND_NAME = "TheTruegage"
 BRAND_SITE = "app.thetruegage.com"
 LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "thetruegage-logo.png"
 
@@ -171,7 +171,7 @@ class ReportContext:
     description: str = ""
 
 
-class TrueGageReportPDF(FPDF):
+class TheTruegageReportPDF(FPDF):
     """A4 portrait report with branded header/footer chrome."""
 
     def __init__(self, chrome: ReportChrome) -> None:
@@ -282,7 +282,7 @@ class TrueGageReportPDF(FPDF):
         self.set_line_width(0.2)
 
     def _place_logo(self, x: float, y: float, size: float = 18) -> None:
-        """Official Thetruegage logo PNG, with vector fallback."""
+        """Official TheTruegage logo PNG, with vector fallback."""
         if LOGO_PATH.is_file():
             self.image(str(LOGO_PATH), x=x, y=y, w=size, h=size)
             return
@@ -760,7 +760,7 @@ class TrueGageReportPDF(FPDF):
         self.ln(3)
 
 
-def output_pdf_bytes(pdf: TrueGageReportPDF) -> bytes:
+def output_pdf_bytes(pdf: TheTruegageReportPDF) -> bytes:
     out = pdf.output()
     if isinstance(out, (bytes, bytearray)):
         return bytes(out)

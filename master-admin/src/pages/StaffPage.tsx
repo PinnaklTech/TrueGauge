@@ -83,7 +83,7 @@ export function StaffPage() {
 
   return (
     <div>
-      <h1 className="page-title">TrueGage staff</h1>
+      <h1 className="page-title">TheTruegage staff</h1>
       <p className="page-sub">
         Platform admins who can sign into this Staff Console with the shared passcode. Create additional staff
         accounts for your team.

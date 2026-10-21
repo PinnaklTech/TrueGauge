@@ -235,7 +235,7 @@ class EmailSettingsIn(BaseModel):
     smtp_password: Optional[str] = Field(None, max_length=512)
     smtp_use_tls: bool = True
     smtp_from_email: str = Field(..., min_length=3, max_length=255)
-    smtp_from_name: Optional[str] = Field("TrueGage", max_length=255)
+    smtp_from_name: Optional[str] = Field("TheTruegage", max_length=255)
 
 
 class PlatformSmtpOut(BaseModel):
@@ -259,7 +259,7 @@ class PlatformSmtpIn(BaseModel):
     smtp_password: Optional[str] = Field(None, max_length=512)
     smtp_use_tls: bool = True
     smtp_from_email: str = Field(..., min_length=3, max_length=255)
-    smtp_from_name: Optional[str] = Field("TrueGage", max_length=255)
+    smtp_from_name: Optional[str] = Field("TheTruegage", max_length=255)
 
 
 class PlatformSmtpTestIn(BaseModel):

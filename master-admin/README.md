@@ -1,6 +1,6 @@
-# TrueGage · Staff Console (Master Admin)
+# TheTruegage · Staff Console (Master Admin)
 
-Restricted ops console for TrueGage platform staff (`platform_admin` only).
+Restricted ops console for TheTruegage platform staff (`platform_admin` only).
 
 - **URL:** http://localhost:8081  
 - **Customer app:** http://localhost:8080  
@@ -54,7 +54,7 @@ Local default passcode if unset: `000000` (never use this in production).
 
 ## Platform SMTP (onboarding emails)
 
-Set these on the API so onboarding can email the new company admin from TrueGage:
+Set these on the API so onboarding can email the new company admin from TheTruegage:
 
 ```
 SYSTEM_SMTP_HOST=
@@ -62,7 +62,7 @@ SYSTEM_SMTP_PORT=587
 SYSTEM_SMTP_USERNAME=
 SYSTEM_SMTP_PASSWORD=
 SYSTEM_SMTP_FROM_EMAIL=
-SYSTEM_SMTP_FROM_NAME=TrueGage
+SYSTEM_SMTP_FROM_NAME=TheTruegage
 SYSTEM_SMTP_USE_TLS=true
 ```
 

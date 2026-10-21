@@ -3,12 +3,6 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { staffLogin } from "@/lib/api";
 import { isAuthenticated, setSessionTokens } from "@/lib/auth";
 
-const staffPoints = [
-  "Platform-wide company control",
-  "Staff-only restricted access",
-  "Audit activity & workspace handoff",
-] as const;
-
 export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -49,20 +43,12 @@ export function LoginPage() {
             <span className="staff-login-logo-mark" aria-hidden>
               TG
             </span>
-            <span>TrueGage</span>
+            <span>TheTruegage</span>
           </div>
           <div className="staff-login-hero">
             <p className="staff-login-kicker">Restricted · Internal</p>
-            <h1>TrueGage Staff Access</h1>
-            <p>
-              This console is for TrueGage platform staff only. Customer workspace users are denied
-              access — use the main app to sign in to your company.
-            </p>
-            <ul>
-              {staffPoints.map((label) => (
-                <li key={label}>{label}</li>
-              ))}
-            </ul>
+            <h1>TheTruegage Staff Access</h1>
+            <p>This console is for TheTruegage platform staff only.</p>
           </div>
         </div>
         <svg
@@ -83,7 +69,7 @@ export function LoginPage() {
           <span className="staff-login-logo-mark" aria-hidden>
             TG
           </span>
-          <span>TrueGage Staff</span>
+          <span>TheTruegage Staff</span>
         </div>
         <form className="staff-login-form" onSubmit={(e) => void onSubmit(e)}>
           <p className="staff-login-form-kicker">Master Admin</p>
@@ -132,9 +118,6 @@ export function LoginPage() {
           <button type="submit" className="btn btn-primary staff-login-submit" disabled={busy}>
             {busy ? "Signing in…" : "Sign in to Staff Console"}
           </button>
-          <p className="staff-login-denied">
-            Not TrueGage staff? Sign in at the customer app — this portal will reject workspace accounts.
-          </p>
         </form>
       </main>
     </div>

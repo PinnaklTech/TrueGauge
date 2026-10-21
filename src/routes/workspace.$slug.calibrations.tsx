@@ -29,7 +29,7 @@ import { toast } from "sonner";
 type CalTab = "schedules" | "history" | "log";
 
 export const Route = createFileRoute("/workspace/$slug/calibrations")({
-  head: () => ({ meta: [{ title: "Calibrations · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Calibrations · TheTruegage" }] }),
   validateSearch: (search: Record<string, unknown>): { tab?: CalTab; equipment?: string } => {
     const tab = search.tab;
     const equipment = typeof search.equipment === "string" ? search.equipment : undefined;
@@ -102,7 +102,7 @@ function CalibrationsPage() {
             <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
               Calibration Scheduling & History
             </h1>
-            <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-semibold text-warning">
+            <span className="tg-count-badge">
               Pending Cycles: {pending}
             </span>
           </div>
@@ -598,7 +598,7 @@ function LogCalibrationForm({
             </>
           ) : (
             <p className="text-[11px] text-muted-foreground">
-              Certificate vault is not included in your plan. Contact TrueGage to attach PDFs.
+              Certificate vault is not included in your plan. Contact TheTruegage to attach PDFs.
             </p>
           )}
         </div>

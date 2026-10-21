@@ -74,7 +74,7 @@ export function Shell() {
           ✕
         </button>
         <div className="brand">
-          <div className="brand-kicker">TrueGage · Restricted</div>
+          <div className="brand-kicker">TheTruegage · Restricted</div>
           <div className="brand-title">Staff Console</div>
         </div>
         <nav className="nav">
@@ -126,7 +126,7 @@ export function Shell() {
             </span>
           </button>
           <div className="mobile-topbar-brand">
-            <div className="mobile-topbar-kicker">TrueGage · Staff</div>
+            <div className="mobile-topbar-kicker">TheTruegage · Staff</div>
             <div className="mobile-topbar-title">Staff Console</div>
           </div>
         </div>

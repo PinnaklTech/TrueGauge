@@ -4,7 +4,7 @@ import { exchangeHandoffCode } from "@/lib/api";
 import { setSessionTokens } from "@/lib/auth";
 
 export const Route = createFileRoute("/auth/handoff")({
-  head: () => ({ meta: [{ title: "Opening workspace · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Opening workspace · TheTruegage" }] }),
   component: HandoffPage,
 });
 

@@ -39,7 +39,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/workspace/$slug/certificates")({
-  head: () => ({ meta: [{ title: "Certificates · TrueGage" }] }),
+  head: () => ({ meta: [{ title: "Certificates · TheTruegage" }] }),
   component: CertificatesPage,
 });
 
@@ -212,7 +212,7 @@ function CertificatesPage() {
               Certificate vault is not included in your plan
             </p>
             <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-              Contact TrueGage to enable private PDF certificate storage for your company. Once
+              Contact TheTruegage to enable private PDF certificate storage for your company. Once
               enabled, you get 2 GB of vault space for calibration documents.
             </p>
           </div>
@@ -244,7 +244,7 @@ function CertificatesPage() {
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">
               {atQuota
-                ? "Quota full — delete files or contact TrueGage."
+                ? "Quota full — delete files or contact TheTruegage."
                 : nearQuota
                   ? "Approaching your 2 GB limit."
                   : "Private PDF vault · max 2 MB per file"}

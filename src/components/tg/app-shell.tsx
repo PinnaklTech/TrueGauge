@@ -720,7 +720,7 @@ export function AppShell({
             >
               <div className="min-w-0">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  TrueGage
+                  TheTruegage
                 </div>
                 <div className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
                   {orgName}
@@ -908,10 +908,10 @@ export function AppShell({
           {/* Mobile page context */}
           <div className="min-w-0 flex-1 md:hidden">
             <p className="truncate text-sm font-semibold leading-tight text-foreground">
-              {crumbTrail[crumbTrail.length - 1]?.label || orgName || "TrueGage"}
+              {crumbTrail[crumbTrail.length - 1]?.label || orgName || "TheTruegage"}
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
-              {orgName && crumbTrail.length > 0 ? orgName : "TrueGage"}
+              {orgName && crumbTrail.length > 0 ? orgName : "TheTruegage"}
             </p>
           </div>
 
@@ -920,7 +920,7 @@ export function AppShell({
               to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
               className="tg-focus-ring rounded-sm font-medium text-foreground hover:text-primary"
             >
-              TrueGage
+              TheTruegage
             </Link>
             {crumbTrail.map((b, i) => (
               <span key={`${b.label}-${i}`} className="flex items-center gap-1.5">
