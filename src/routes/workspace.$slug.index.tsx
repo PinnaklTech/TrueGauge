@@ -171,7 +171,7 @@ function Dashboard() {
   const navigate = useNavigate();
 
   return (
-    <AppShell breadcrumbs={[{ label: "Control Center" }]} hidePageHeader>
+    <AppShell layout="dashboard" breadcrumbs={[{ label: "Control Center" }]} hidePageHeader>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           {welcomeName && (

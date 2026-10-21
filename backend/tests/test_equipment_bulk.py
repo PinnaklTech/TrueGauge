@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ValidationError
+
+from app.schemas import EquipmentBulkDeleteIn, EquipmentBulkUpdateIn
 from app.services.equipment_bulk import (
     EXPORT_COLUMNS,
+    apply_equipment_bulk_patch,
     build_template_csv,
+    normalize_bulk_ids,
     normalize_headers,
     parse_spreadsheet,
     validate_and_parse_rows,
@@ -92,3 +100,62 @@ def test_next_before_last_rejected():
     parsed, errors = validate_and_parse_rows(rows, existing_tags_lower=set())
     assert parsed == []
     assert any(e.field == "next_calibration" for e in errors)
+
+
+def test_normalize_bulk_ids_dedupes_and_strips():
+    assert normalize_bulk_ids([" a ", "b", "a", "", "  ", "b", "c"]) == ["a", "b", "c"]
+
+
+def test_apply_bulk_patch_taxonomy_and_status():
+    row = SimpleNamespace(
+        department="",
+        category="",
+        location="",
+        owner="",
+        responsible_email="old@x.com",
+        status="calibrated",
+        synced_at=None,
+    )
+    changed = apply_equipment_bulk_patch(
+        row,
+        {"department": " QA ", "status": "inactive", "responsible_email": "  "},
+    )
+    assert set(changed) == {"department", "status", "responsible_email"}
+    assert row.department == "QA"
+    assert row.status == "inactive"
+    assert row.responsible_email is None
+    assert row.synced_at is not None
+
+
+def test_apply_bulk_patch_preserves_status_when_omitted():
+    row = SimpleNamespace(
+        department="Old",
+        category="",
+        location="",
+        owner="",
+        responsible_email=None,
+        status="failed",
+        synced_at=None,
+    )
+    changed = apply_equipment_bulk_patch(row, {"department": "New"})
+    assert changed == ["department"]
+    assert row.department == "New"
+    assert row.status == "failed"
+
+
+def test_bulk_update_schema_requires_patch_field():
+    with pytest.raises(ValidationError):
+        EquipmentBulkUpdateIn(ids=["eq-1"], patch={})
+
+
+def test_bulk_update_schema_happy():
+    body = EquipmentBulkUpdateIn(ids=["eq-1", "eq-2"], patch={"department": "Lab"})
+    assert body.patch.department == "Lab"
+    assert len(body.ids) == 2
+
+
+def test_bulk_delete_schema_caps_ids():
+    with pytest.raises(ValidationError):
+        EquipmentBulkDeleteIn(ids=[f"id-{i}" for i in range(501)])
+    ok = EquipmentBulkDeleteIn(ids=["a"])
+    assert ok.ids == ["a"]

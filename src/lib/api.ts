@@ -330,6 +330,46 @@ export async function deleteEquipment(id: string) {
   await request<void>(`/api/equipment/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+export type EquipmentBulkPatch = {
+  category?: string;
+  department?: string;
+  location?: string;
+  owner?: string;
+  responsible_email?: string | null;
+  status?: CalStatus;
+};
+
+export type EquipmentBulkItemError = {
+  id: string;
+  message: string;
+};
+
+export type EquipmentBulkUpdateResult = {
+  updated: number;
+  failed: number;
+  errors: EquipmentBulkItemError[];
+};
+
+export type EquipmentBulkDeleteResult = {
+  deleted: number;
+  failed: number;
+  errors: EquipmentBulkItemError[];
+};
+
+export async function bulkUpdateEquipment(ids: string[], patch: EquipmentBulkPatch) {
+  return request<EquipmentBulkUpdateResult>("/api/equipment/bulk-update", {
+    method: "POST",
+    body: JSON.stringify({ ids, patch }),
+  });
+}
+
+export async function bulkDeleteEquipment(ids: string[]) {
+  return request<EquipmentBulkDeleteResult>("/api/equipment/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export type EquipmentImportRowError = {
   row: number;
   field: string;

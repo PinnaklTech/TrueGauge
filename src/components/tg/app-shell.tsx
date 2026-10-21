@@ -141,6 +141,7 @@ export function AppShell({
   breadcrumbs,
   hidePageHeader,
   autoCollapseSidebar,
+  layout = "page",
 }: {
   children: ReactNode;
   title?: string;
@@ -148,7 +149,13 @@ export function AppShell({
   hidePageHeader?: boolean;
   /** When true, collapse the desktop sidebar on mount (e.g. Settings). */
   autoCollapseSidebar?: boolean;
+  /**
+   * `dashboard` — full sticky header with search / Scan / notifications.
+   * `page` — compact Odoo-style breadcrumb strip (default for headroom).
+   */
+  layout?: "dashboard" | "page";
 }) {
+  const isDashboardLayout = layout === "dashboard";
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { slug?: string };
@@ -892,87 +899,90 @@ export function AppShell({
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex min-h-16 items-center gap-2 border-b border-border bg-background/90 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-md md:h-14 md:min-h-14 md:gap-3 md:px-6 md:pt-0">
-          <button
-            type="button"
-            className={cn(
-              "tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary shadow-xs",
-              "hover:bg-primary/15 hover:border-primary/60 active:bg-primary/20 md:hidden",
-            )}
-            aria-label="Open navigation menu"
-            onClick={() => setMobileOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-
-          {/* Mobile page context */}
-          <div className="min-w-0 flex-1 md:hidden">
-            <p className="truncate text-sm font-semibold leading-tight text-foreground">
-              {crumbTrail[crumbTrail.length - 1]?.label || orgName || "TheTruegage"}
-            </p>
-            <p className="truncate text-[11px] text-muted-foreground">
-              {orgName && crumbTrail.length > 0 ? orgName : "TheTruegage"}
-            </p>
-          </div>
-
-          <nav className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
-            <Link
-              to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
-              className="tg-focus-ring rounded-sm font-medium text-foreground hover:text-primary"
-            >
-              TheTruegage
-            </Link>
-            {crumbTrail.map((b, i) => (
-              <span key={`${b.label}-${i}`} className="flex items-center gap-1.5">
-                <span className="text-border-strong">›</span>
-                {b.to ? (
-                  <Link to={b.to} className="tg-focus-ring rounded-sm hover:text-foreground">
-                    {b.label}
-                  </Link>
-                ) : (
-                  <span className="text-foreground">{b.label}</span>
-                )}
-              </span>
-            ))}
-          </nav>
-
-          <div className="flex shrink-0 items-center justify-end gap-1.5 md:min-w-0 md:flex-1 md:justify-center">
-            <GlobalSearch
-              workspaceSlug={workspaceSlug}
-              storageEnabled={Boolean(me?.storage_enabled)}
-              role={me?.role}
-            />
-          </div>
-
-          {workspaceSlug && !pathname.includes("/scan") ? (
-            <Link
-              to="/workspace/$slug/scan"
-              params={{ slug: workspaceSlug }}
+        {isDashboardLayout ? (
+          <header className="sticky top-0 z-20 flex min-h-16 items-center gap-2 border-b border-border bg-background/90 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-md md:h-14 md:min-h-14 md:gap-3 md:px-6 md:pt-0">
+            <button
+              type="button"
               className={cn(
-                "tg-focus-ring hidden shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-card",
-                "px-3 text-xs font-medium text-foreground shadow-xs",
-                "hover:border-primary/40 hover:bg-primary/5 hover:text-primary",
-                "sm:inline-flex sm:h-8",
+                "tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary shadow-xs",
+                "hover:bg-primary/15 hover:border-primary/60 active:bg-primary/20 md:hidden",
               )}
-              aria-label="Scan equipment"
-              data-tour="nav-scan"
+              aria-label="Open navigation menu"
+              onClick={() => setMobileOpen(true)}
             >
-              <ScanLine className="h-3.5 w-3.5 shrink-0" />
-              <span>Scan</span>
-            </Link>
-          ) : null}
+              <Menu className="h-5 w-5" />
+            </button>
 
-          <Link
-            to={workspaceSlug ? workspacePath(workspaceSlug, "notifications") : "/auth/login"}
-            className={cn(iconBtn, "relative")}
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5 md:h-4 md:w-4" />
-            {unread > 0 && (
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive ring-2 ring-background md:right-1 md:top-1 md:h-1.5 md:w-1.5" />
-            )}
-          </Link>
-        </header>
+            {/* Mobile page context */}
+            <div className="min-w-0 flex-1 md:hidden">
+              <p className="truncate text-sm font-semibold leading-tight text-foreground">
+                {crumbTrail[crumbTrail.length - 1]?.label || orgName || "TheTruegage"}
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {orgName && crumbTrail.length > 0 ? orgName : "TheTruegage"}
+              </p>
+            </div>
+
+            <nav className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
+              <Link
+                to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
+                className="tg-focus-ring rounded-sm font-medium text-foreground hover:text-primary"
+              >
+                TheTruegage
+              </Link>
+              {crumbTrail.map((b, i) => (
+                <span key={`${b.label}-${i}`} className="flex items-center gap-1.5">
+                  <span className="text-border-strong">›</span>
+                  {b.to ? (
+                    <Link to={b.to} className="tg-focus-ring rounded-sm hover:text-foreground">
+                      {b.label}
+                    </Link>
+                  ) : (
+                    <span className="text-foreground">{b.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+
+            <div className="flex shrink-0 items-center justify-end gap-1.5 md:min-w-0 md:flex-1 md:justify-center">
+              <GlobalSearch
+                workspaceSlug={workspaceSlug}
+                storageEnabled={Boolean(me?.storage_enabled)}
+                role={me?.role}
+                variant="field"
+              />
+            </div>
+
+            {workspaceSlug && !pathname.includes("/scan") ? (
+              <Link
+                to="/workspace/$slug/scan"
+                params={{ slug: workspaceSlug }}
+                className={cn(
+                  "tg-focus-ring hidden shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-card",
+                  "px-3 text-xs font-medium text-foreground shadow-xs",
+                  "hover:border-primary/40 hover:bg-primary/5 hover:text-primary",
+                  "sm:inline-flex sm:h-8",
+                )}
+                aria-label="Scan equipment"
+                data-tour="nav-scan"
+              >
+                <ScanLine className="h-3.5 w-3.5 shrink-0" />
+                <span>Scan</span>
+              </Link>
+            ) : null}
+
+            <Link
+              to={workspaceSlug ? workspacePath(workspaceSlug, "notifications") : "/auth/login"}
+              className={cn(iconBtn, "relative")}
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5 md:h-4 md:w-4" />
+              {unread > 0 && (
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive ring-2 ring-background md:right-1 md:top-1 md:h-1.5 md:w-1.5" />
+              )}
+            </Link>
+          </header>
+        ) : null}
 
         {needsTour && !tourRunning && tourPaused ? (
           <div className="border-b border-[color:var(--color-primary)]/30 bg-[color:var(--color-primary)]/10 px-4 py-3 md:px-8">
@@ -1003,7 +1013,94 @@ export function AppShell({
           </div>
         )}
 
-        <main className="tg-page-enter flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main
+          className={cn(
+            "tg-page-enter flex-1 px-4 md:px-8",
+            isDashboardLayout ? "py-6 md:py-8" : "pb-6 pt-3 md:pb-8 md:pt-4",
+          )}
+        >
+          {!isDashboardLayout && (
+            <div className="mb-3 flex items-center gap-2 md:mb-4">
+              <button
+                type="button"
+                className={cn(
+                  "tg-focus-ring inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary",
+                  "hover:bg-primary/15 md:hidden",
+                )}
+                aria-label="Open navigation menu"
+                onClick={() => setMobileOpen(true)}
+              >
+                <Menu className="h-4 w-4" />
+              </button>
+
+              <nav
+                className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
+                aria-label="Breadcrumb"
+              >
+                <Link
+                  to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
+                  className="tg-focus-ring rounded-sm hover:text-foreground"
+                >
+                  TheTruegage
+                </Link>
+                {crumbTrail.map((b, i) => {
+                  const isLast = i === crumbTrail.length - 1;
+                  return (
+                    <span key={`${b.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
+                      <span className="text-border-strong" aria-hidden>
+                        /
+                      </span>
+                      {b.to && !isLast ? (
+                        <Link
+                          to={b.to}
+                          className="tg-focus-ring truncate rounded-sm hover:text-foreground"
+                        >
+                          {b.label}
+                        </Link>
+                      ) : (
+                        <span
+                          className={cn(
+                            "truncate",
+                            isLast ? "font-medium text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          {b.label}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+              </nav>
+
+              <div className="flex shrink-0 items-center gap-1">
+                <GlobalSearch
+                  workspaceSlug={workspaceSlug}
+                  storageEnabled={Boolean(me?.storage_enabled)}
+                  role={me?.role}
+                  variant="icon"
+                />
+                {workspaceSlug && !pathname.includes("/scan") ? (
+                  <Link
+                    to="/workspace/$slug/scan"
+                    params={{ slug: workspaceSlug }}
+                    className={cn(
+                      "tg-focus-ring hidden items-center justify-center gap-1.5 rounded-md border border-border bg-card",
+                      "h-8 px-2.5 text-xs font-medium text-foreground shadow-xs",
+                      "hover:border-primary/40 hover:bg-primary/5 hover:text-primary",
+                      "sm:inline-flex",
+                    )}
+                    aria-label="Scan equipment"
+                    data-tour="nav-scan"
+                  >
+                    <ScanLine className="h-3.5 w-3.5 shrink-0" />
+                    <span>Scan</span>
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          )}
+          {children}
+        </main>
 
         {/* Hide FAB on scan + equipment detail (detail has its own shop-floor action bar) */}
         {workspaceSlug &&
@@ -1012,7 +1109,7 @@ export function AppShell({
           <Link
             to="/workspace/$slug/scan"
             params={{ slug: workspaceSlug }}
-            className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background transition hover:bg-primary/90 md:hidden"
+            className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/35 ring-[3px] ring-black/25 transition hover:bg-primary/90 dark:ring-white/35 md:hidden"
             aria-label="Scan equipment"
             data-tour="nav-scan-fab"
           >

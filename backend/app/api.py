@@ -39,6 +39,11 @@ from app.schemas import (
     CertificateListOut,
     CertificateOut,
     CertificateViewUrlOut,
+    EquipmentBulkDeleteIn,
+    EquipmentBulkDeleteResult,
+    EquipmentBulkItemError,
+    EquipmentBulkUpdateIn,
+    EquipmentBulkUpdateResult,
     EquipmentCreate,
     EquipmentImportResult,
     EquipmentImportRowError,
@@ -87,8 +92,10 @@ from app.services.email_service import (
     smtp_configured,
 )
 from app.services.equipment_bulk import (
+    apply_equipment_bulk_patch,
     build_export_csv,
     build_template_csv,
+    normalize_bulk_ids,
     run_import,
 )
 from app.services.equipment_sync import (
@@ -398,6 +405,9 @@ def list_equipment(
             (EquipmentCache.name.ilike(like))
             | (EquipmentCache.tag.ilike(like))
             | (EquipmentCache.serial.ilike(like))
+            | (EquipmentCache.manufacturer.ilike(like))
+            | (EquipmentCache.model.ilike(like))
+            | (EquipmentCache.owner.ilike(like))
         )
     rows = query.order_by(EquipmentCache.name.asc()).all()
     return EquipmentListOut(items=[equipment_to_out(r) for r in rows], total=len(rows))
@@ -655,6 +665,116 @@ def audit_labels_printed(
     )
     db.commit()
     return Response(status_code=204)
+
+
+@router.post("/equipment/bulk-update", response_model=EquipmentBulkUpdateResult)
+def bulk_update_equipment(
+    body: EquipmentBulkUpdateIn,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> EquipmentBulkUpdateResult:
+    """Apply a partial patch to many equipment rows (taxonomy, ownership, status)."""
+    ids = normalize_bulk_ids(body.ids)
+    if not ids:
+        raise HTTPException(status_code=400, detail="No equipment ids provided")
+    if len(ids) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 equipment ids per request")
+
+    patch = body.patch.model_dump(exclude_unset=True)
+    if not patch:
+        raise HTTPException(status_code=400, detail="At least one patch field is required")
+
+    rows = (
+        db.query(EquipmentCache)
+        .filter(
+            EquipmentCache.tenant_id == ctx.tenant_id,
+            EquipmentCache.public_id.in_(ids),
+        )
+        .all()
+    )
+    by_id = {r.public_id: r for r in rows}
+
+    updated = 0
+    errors: list[EquipmentBulkItemError] = []
+    field_names: list[str] = []
+
+    for eid in ids:
+        row = by_id.get(eid)
+        if row is None:
+            errors.append(EquipmentBulkItemError(id=eid, message="not found"))
+            continue
+        changed = apply_equipment_bulk_patch(row, patch)
+        if changed:
+            updated += 1
+            for f in changed:
+                if f not in field_names:
+                    field_names.append(f)
+
+    if updated > 0:
+        fields_label = ",".join(field_names) if field_names else "fields"
+        record_audit_event(
+            db,
+            tenant_id=ctx.tenant_id,
+            user=ctx.user,
+            action="equipment.bulk_updated",
+            target_type="equipment",
+            target_id=None,
+            target_name="bulk update",
+            detail=f"updated={updated} fields={fields_label}",
+        )
+        db.commit()
+
+    return EquipmentBulkUpdateResult(updated=updated, failed=len(errors), errors=errors)
+
+
+@router.post("/equipment/bulk-delete", response_model=EquipmentBulkDeleteResult)
+def bulk_delete_equipment(
+    body: EquipmentBulkDeleteIn,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> EquipmentBulkDeleteResult:
+    """Hard-delete many equipment rows (cascades calibrations/certificates)."""
+    ids = normalize_bulk_ids(body.ids)
+    if not ids:
+        raise HTTPException(status_code=400, detail="No equipment ids provided")
+    if len(ids) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 equipment ids per request")
+
+    rows = (
+        db.query(EquipmentCache)
+        .filter(
+            EquipmentCache.tenant_id == ctx.tenant_id,
+            EquipmentCache.public_id.in_(ids),
+        )
+        .all()
+    )
+    by_id = {r.public_id: r for r in rows}
+
+    deleted = 0
+    errors: list[EquipmentBulkItemError] = []
+
+    for eid in ids:
+        row = by_id.get(eid)
+        if row is None:
+            errors.append(EquipmentBulkItemError(id=eid, message="not found"))
+            continue
+        db.delete(row)
+        deleted += 1
+
+    if deleted > 0:
+        record_audit_event(
+            db,
+            tenant_id=ctx.tenant_id,
+            user=ctx.user,
+            action="equipment.bulk_deleted",
+            target_type="equipment",
+            target_id=None,
+            target_name="bulk delete",
+            detail=f"deleted={deleted}",
+        )
+        db.commit()
+
+    return EquipmentBulkDeleteResult(deleted=deleted, failed=len(errors), errors=errors)
 
 
 @router.get("/equipment/{equipment_id}", response_model=EquipmentOut)

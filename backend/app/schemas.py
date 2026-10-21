@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OdooCredentialsIn(BaseModel):
@@ -142,6 +142,49 @@ class EquipmentUpdate(BaseModel):
     frequency_days: Optional[int] = None
     owner: Optional[str] = None
     responsible_email: Optional[str] = None
+
+
+class EquipmentBulkPatch(BaseModel):
+    """Safe subset of EquipmentUpdate for multi-select bulk edit."""
+
+    category: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    owner: Optional[str] = None
+    responsible_email: Optional[str] = None
+    status: Optional[CalStatus] = None
+
+
+class EquipmentBulkUpdateIn(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=500)
+    patch: EquipmentBulkPatch
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> "EquipmentBulkUpdateIn":
+        if not self.patch.model_dump(exclude_unset=True):
+            raise ValueError("At least one patch field is required")
+        return self
+
+
+class EquipmentBulkDeleteIn(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=500)
+
+
+class EquipmentBulkItemError(BaseModel):
+    id: str
+    message: str
+
+
+class EquipmentBulkUpdateResult(BaseModel):
+    updated: int
+    failed: int
+    errors: list[EquipmentBulkItemError]
+
+
+class EquipmentBulkDeleteResult(BaseModel):
+    deleted: int
+    failed: int
+    errors: list[EquipmentBulkItemError]
 
 
 class EquipmentListOut(BaseModel):

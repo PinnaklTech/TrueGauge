@@ -4,18 +4,23 @@ import { AppShell } from "@/components/tg/app-shell";
 import { EquipmentMobileCard } from "@/components/tg/equipment-mobile-card";
 import { StatusBadge } from "@/components/tg/status-badge";
 import { EquipmentFormDialog } from "@/components/tg/equipment-form-dialog";
+import { EquipmentBulkEditDialog } from "@/components/tg/equipment-bulk-edit-dialog";
 import { EquipmentTaxonomyDialog } from "@/components/tg/equipment-taxonomy-dialog";
 import { PrintLabelsDialog } from "@/components/tg/print-labels-dialog";
 import { EquipmentImportExportDialog } from "@/components/tg/equipment-import-export-dialog";
 import { ErrorBanner, PageState } from "@/components/tg/page-state";
 import { statusLabel, type CalStatus } from "@/lib/mock-data";
 import {
+  bulkDeleteEquipment,
+  bulkUpdateEquipment,
   createEquipment,
   deleteEquipment,
   getMe,
+  getOdooStatus,
   listEquipment,
   updateEquipment,
   type AppEquipment,
+  type EquipmentBulkPatch,
   type EquipmentPayload,
 } from "@/lib/api";
 import { parseDate } from "@/lib/compliance";
@@ -25,18 +30,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   LayoutGrid,
   List,
@@ -50,13 +62,27 @@ import {
   SlidersHorizontal,
   X,
   CheckSquare,
+  Columns3,
+  ChevronDown,
   FileSpreadsheet,
+  ListChecks,
+  PencilLine,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { differenceInCalendarDays } from "date-fns";
 import { useWorkspaceFormat } from "@/lib/format-context";
 import { toast } from "sonner";
+import {
+  EQUIPMENT_COLUMN_DEFS,
+  loadEquipmentColumns,
+  saveEquipmentColumns,
+  visibleColumnCount,
+  type EquipmentColumnKey,
+  type EquipmentColumnVisibility,
+} from "@/lib/equipment-columns";
+
+const MAX_BULK_IDS = 500;
 
 type EquipmentSearch = {
   new?: true;
@@ -100,8 +126,28 @@ function EquipmentPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [importExportOpen, setImportExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [columns, setColumns] = useState<EquipmentColumnVisibility>(() =>
+    loadEquipmentColumns(slug),
+  );
+
+  useEffect(() => {
+    setColumns(loadEquipmentColumns(slug));
+  }, [slug]);
+
+  const toggleColumn = (key: EquipmentColumnKey, next: boolean) => {
+    setColumns((prev) => {
+      const updated = { ...prev, [key]: next };
+      saveEquipmentColumns(slug, updated);
+      return updated;
+    });
+  };
+
+  const colVisible = (key: EquipmentColumnKey) => columns[key];
 
   const enterSelectMode = () => {
     setSelectMode(true);
@@ -117,6 +163,16 @@ function EquipmentPage() {
   const allowWrite = canWrite(me?.role);
   const allowDelete = canDelete(me?.role);
   const isAdmin = isAdminRole(me?.role);
+  const tableColCount =
+    visibleColumnCount(columns) + 1 + (allowWrite && selectMode ? 1 : 0);
+
+  const { data: odooStatus } = useQuery({
+    queryKey: ["odoo-status"],
+    queryFn: getOdooStatus,
+    enabled: isAdmin,
+    staleTime: 60_000,
+  });
+  const showOdooImport = isAdmin && Boolean(odooStatus?.configured);
 
   // Mobile defaults to cards; desktop keeps table/grid
   useEffect(() => {
@@ -282,6 +338,59 @@ function EquipmentPage() {
     }
   };
 
+  const selectedCount = selectedIds.size;
+  const bulkOverCap = selectedCount > MAX_BULK_IDS;
+
+  const onBulkUpdate = async (patch: EquipmentBulkPatch) => {
+    if (selectedCount === 0) return;
+    if (bulkOverCap) {
+      toast.error(`Select at most ${MAX_BULK_IDS} items at a time`);
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const result = await bulkUpdateEquipment([...selectedIds], patch);
+      await queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit"] });
+      setBulkEditOpen(false);
+      if (result.failed > 0) {
+        toast.warning(`Updated ${result.updated}, ${result.failed} failed`);
+      } else {
+        toast.success(`Updated ${result.updated} item${result.updated === 1 ? "" : "s"}`);
+      }
+      exitSelectMode();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Bulk update failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const onBulkDelete = async () => {
+    if (selectedCount === 0) return;
+    if (bulkOverCap) {
+      toast.error(`Select at most ${MAX_BULK_IDS} items at a time`);
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const result = await bulkDeleteEquipment([...selectedIds]);
+      await queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      await queryClient.invalidateQueries({ queryKey: ["audit"] });
+      setBulkDeleteOpen(false);
+      if (result.failed > 0) {
+        toast.warning(`Deleted ${result.deleted}, ${result.failed} failed`);
+      } else {
+        toast.success(`Deleted ${result.deleted} item${result.deleted === 1 ? "" : "s"}`);
+      }
+      exitSelectMode();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Bulk delete failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const clearSheetFilters = () => {
     setDepartment("all");
     setCategory("all");
@@ -340,27 +449,80 @@ function EquipmentPage() {
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
           </div>
-          {allowWrite && (
+          {view === "table" && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" aria-label="Choose table columns">
+                  <Columns3 className="mr-1.5 h-3.5 w-3.5" /> Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Visible columns</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {EQUIPMENT_COLUMN_DEFS.map((col) => (
+                  <DropdownMenuCheckboxItem
+                    key={col.key}
+                    checked={columns[col.key]}
+                    disabled={col.required}
+                    onCheckedChange={(checked) => toggleColumn(col.key, checked === true)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {col.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {allowWrite && !selectMode && (
             <Button
               size="sm"
-              variant={selectMode ? "default" : "outline"}
-              data-tour="equipment-print-labels"
-              onClick={() => (selectMode ? setPrintOpen(true) : enterSelectMode())}
-              disabled={selectMode && selectedIds.size === 0}
+              variant="outline"
+              data-tour="equipment-select"
+              title="Select items to update, delete, or print labels"
+              aria-label="Bulk actions: select items to update, delete, or print"
+              onClick={enterSelectMode}
             >
-              <Printer className="mr-1.5 h-3.5 w-3.5" />
-              {selectMode
-                ? selectedIds.size > 0
-                  ? `Print labels (${selectedIds.size})`
-                  : "Pick items to print"
-                : "Print labels"}
+              <ListChecks className="mr-1.5 h-3.5 w-3.5" /> Bulk actions
             </Button>
           )}
           {allowWrite && selectMode && (
-            <Button size="sm" variant="ghost" onClick={exitSelectMode}>
-              <X className="mr-1.5 h-3.5 w-3.5" />
-              Cancel
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={selectedCount === 0 || bulkBusy || bulkOverCap}
+                onClick={() => setBulkEditOpen(true)}
+              >
+                <PencilLine className="mr-1.5 h-3.5 w-3.5" />
+                Update{selectedCount > 0 ? ` (${selectedCount})` : ""}
+              </Button>
+              {allowDelete && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={selectedCount === 0 || bulkBusy || bulkOverCap}
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Delete{selectedCount > 0 ? ` (${selectedCount})` : ""}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="default"
+                data-tour="equipment-print-labels"
+                disabled={selectedCount === 0 || bulkBusy || bulkOverCap}
+                onClick={() => setPrintOpen(true)}
+              >
+                <Printer className="mr-1.5 h-3.5 w-3.5" />
+                Print{selectedCount > 0 ? ` (${selectedCount})` : ""}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={exitSelectMode} disabled={bulkBusy}>
+                <X className="mr-1.5 h-3.5 w-3.5" />
+                Cancel
+              </Button>
+            </>
           )}
           {allowWrite && !selectMode && (
             <Button
@@ -382,7 +544,7 @@ function EquipmentPage() {
               <Layers className="mr-1.5 h-3.5 w-3.5" /> Lists
             </Button>
           )}
-          {isAdmin && !selectMode && (
+          {showOdooImport && !selectMode && (
             <Button size="sm" variant="outline" asChild>
               <Link
                 to="/workspace/$slug/settings"
@@ -402,17 +564,22 @@ function EquipmentPage() {
 
         {/* Mobile actions: Add primary + overflow */}
         <div className="flex items-center gap-2 md:hidden">
-          {allowWrite && (
+          {allowWrite && !selectMode && (
             <Button
               size="sm"
-              variant={selectMode ? "default" : "outline"}
+              variant="outline"
               className="h-10"
-              data-tour="equipment-print-labels"
-              onClick={() => (selectMode ? setPrintOpen(true) : enterSelectMode())}
-              disabled={selectMode && selectedIds.size === 0}
+              data-tour="equipment-select"
+              title="Select items to update, delete, or print labels"
+              aria-label="Bulk actions: select items to update, delete, or print"
+              onClick={enterSelectMode}
             >
-              <Printer className="mr-1.5 h-4 w-4" />
-              {selectMode ? (selectedIds.size || "Print") : "Print"}
+              <ListChecks className="mr-1.5 h-4 w-4" /> Bulk
+            </Button>
+          )}
+          {allowWrite && selectMode && (
+            <Button size="sm" variant="ghost" className="h-10 px-2" onClick={exitSelectMode} disabled={bulkBusy}>
+              <X className="h-4 w-4" />
             </Button>
           )}
           {allowWrite && !selectMode && (
@@ -425,7 +592,7 @@ function EquipmentPage() {
               <Plus className="mr-1.5 h-4 w-4" /> Add
             </Button>
           )}
-          {(allowWrite || isAdmin) && !selectMode && (
+          {(allowWrite || showOdooImport) && !selectMode && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -454,7 +621,7 @@ function EquipmentPage() {
                     <Layers className="mr-2 h-4 w-4" /> Lists
                   </DropdownMenuItem>
                 )}
-                {isAdmin && (
+                {showOdooImport && (
                   <DropdownMenuItem asChild>
                     <Link
                       to="/workspace/$slug/settings"
@@ -467,11 +634,6 @@ function EquipmentPage() {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          {allowWrite && selectMode && (
-            <Button size="sm" variant="ghost" className="h-10 px-2" onClick={exitSelectMode}>
-              <X className="h-4 w-4" />
-            </Button>
           )}
         </div>
       </div>
@@ -505,6 +667,40 @@ function EquipmentPage() {
             onOpenChange={setPrintOpen}
             equipmentIds={[...selectedIds]}
           />
+          <EquipmentBulkEditDialog
+            open={bulkEditOpen}
+            onOpenChange={setBulkEditOpen}
+            count={selectedCount}
+            onSubmit={onBulkUpdate}
+            saving={bulkBusy}
+          />
+          <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Delete {selectedCount} equipment {selectedCount === 1 ? "item" : "items"}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This permanently removes the selected equipment and their calibrations and
+                  certificates. Prefer bulk update → Inactive to retire assets without deleting
+                  history. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={bulkBusy}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={bulkBusy || selectedCount === 0}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void onBulkDelete();
+                  }}
+                >
+                  {bulkBusy ? "Deleting…" : "Delete permanently"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <EquipmentImportExportDialog
             open={importExportOpen}
             onOpenChange={setImportExportOpen}
@@ -532,22 +728,168 @@ function EquipmentPage() {
         className="tg-rise sticky top-0 z-20 -mx-1 mb-4 space-y-2 bg-background/95 px-1 py-2 backdrop-blur-md md:static md:mx-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none"
         style={{ animationDelay: "80ms" }}
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 basis-[180px]">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="equipment-search"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={isMobile ? "Search equipment…" : "Search by ID, name, manufacturer, or S/N…"}
-              className="h-11 pl-8 md:h-10"
-              aria-label="Search equipment"
-            />
+        <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(9.5rem,20%)] sm:gap-3">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex h-11 items-center gap-1 rounded-md border border-input bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring md:h-10">
+              <Search className="ml-2.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Input
+                id="equipment-search"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={
+                  isMobile
+                    ? "Search equipment…"
+                    : "Search by ID, name, manufacturer, owner, or S/N…"
+                }
+                className="h-full min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0"
+                aria-label="Search equipment"
+              />
+              <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="relative mr-1 h-8 shrink-0 gap-1 border-l border-border/70 pl-2.5 pr-2 text-xs text-muted-foreground hover:text-foreground"
+                    aria-label="Filters"
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Filters</span>
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                    {sheetFilterCount > 0 ? (
+                      <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-0.5 text-[9px] font-bold text-primary-foreground">
+                        {sheetFilterCount}
+                      </span>
+                    ) : null}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 space-y-3.5 p-3.5">
+                  <p className="text-xs font-medium text-muted-foreground">Filter by</p>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-foreground">Department</span>
+                    <select
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      className={cn(
+                        "tg-select h-9 w-full",
+                        department === "all" && "text-muted-foreground",
+                      )}
+                      aria-label="Filter by department"
+                    >
+                      <option value="all">Any department</option>
+                      {departments.length > 0 && (
+                        <option disabled value="">
+                          ────────
+                        </option>
+                      )}
+                      {departments.map((d) => (
+                        <option key={d} value={d} className="text-foreground">
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-foreground">Category</span>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className={cn(
+                        "tg-select h-9 w-full",
+                        category === "all" && "text-muted-foreground",
+                      )}
+                      aria-label="Filter by category"
+                    >
+                      <option value="all">Any category</option>
+                      {categories.length > 0 && (
+                        <option disabled value="">
+                          ────────
+                        </option>
+                      )}
+                      {categories.map((c) => (
+                        <option key={c} value={c} className="text-foreground">
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-foreground">Location</span>
+                    <select
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className={cn(
+                        "tg-select h-9 w-full",
+                        location === "all" && "text-muted-foreground",
+                      )}
+                      aria-label="Filter by location"
+                    >
+                      <option value="all">Any location</option>
+                      {locations.length > 0 && (
+                        <option disabled value="">
+                          ────────
+                        </option>
+                      )}
+                      {locations.map((loc) => (
+                        <option key={loc} value={loc} className="text-foreground">
+                          {loc}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {sheetFilterCount > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-full"
+                      onClick={clearSheetFilters}
+                    >
+                      Clear filters
+                    </Button>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </div>
+            {sheetFilterCount > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {department !== "all" && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
+                    onClick={() => setDepartment("all")}
+                  >
+                    Department: {department}
+                    <X className="h-3 w-3 opacity-60" />
+                  </button>
+                )}
+                {category !== "all" && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
+                    onClick={() => setCategory("all")}
+                  >
+                    Category: {category}
+                    <X className="h-3 w-3 opacity-60" />
+                  </button>
+                )}
+                {location !== "all" && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
+                    onClick={() => setLocation("all")}
+                  >
+                    Location: {location}
+                    <X className="h-3 w-3 opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <select
             value={status}
             onChange={(e) => setStatusFilter(e.target.value as CalStatus | "all")}
-            className="tg-select h-11 min-w-[120px] md:h-10 md:min-w-[140px]"
+            className="tg-select h-11 w-full shrink-0 md:h-10"
             aria-label="Filter by status"
           >
             <option value="all">All Statuses</option>
@@ -557,147 +899,65 @@ function EquipmentPage() {
               </option>
             ))}
           </select>
-
-          {/* Desktop inline filters */}
-          <select
-            value={department}
-            onChange={(e) => setDepartment(e.target.value)}
-            className="tg-select hidden h-10 w-auto min-w-[140px] md:block"
-            aria-label="Filter by department"
-          >
-            <option value="all">All Departments</option>
-            {departments.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="tg-select hidden h-10 w-auto min-w-[140px] md:block"
-            aria-label="Filter by category"
-          >
-            <option value="all">All Categories</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <select
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="tg-select hidden h-10 w-auto min-w-[140px] md:block"
-            aria-label="Filter by location"
-          >
-            <option value="all">All Locations</option>
-            {locations.map((loc) => (
-              <option key={loc} value={loc}>
-                {loc}
-              </option>
-            ))}
-          </select>
-
-          {/* Mobile Filters sheet trigger */}
-          <Button
-            type="button"
-            variant="outline"
-            className="relative h-11 min-w-11 px-3 md:hidden"
-            onClick={() => setFiltersOpen(true)}
-            aria-label="More filters"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            {sheetFilterCount > 0 ? (
-              <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                {sheetFilterCount}
-              </span>
-            ) : null}
-          </Button>
         </div>
 
-        {allowWrite && selectMode && items.length > 0 && (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
+        {allowWrite && selectMode && (
+          <div className="flex flex-col gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs font-medium text-foreground sm:text-sm">
-              Tap items to select for printing
-              {selectedIds.size > 0 ? ` · ${selectedIds.size} selected` : ""}
+              {selectedCount > 0
+                ? `${selectedCount} selected`
+                : "Select items to update, delete, or print"}
+              {bulkOverCap ? ` · max ${MAX_BULK_IDS}` : ""}
             </p>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 px-2 text-xs"
-              onClick={() => toggleSelectAllFiltered()}
-            >
-              <CheckSquare className="mr-1.5 h-3.5 w-3.5" />
-              {allFilteredSelected ? "Clear all" : "Select all"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs md:hidden"
+                disabled={selectedCount === 0 || bulkBusy || bulkOverCap}
+                onClick={() => setBulkEditOpen(true)}
+              >
+                <PencilLine className="mr-1 h-3.5 w-3.5" /> Update
+              </Button>
+              {allowDelete && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive md:hidden"
+                  disabled={selectedCount === 0 || bulkBusy || bulkOverCap}
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs md:hidden"
+                data-tour="equipment-print-labels"
+                disabled={selectedCount === 0 || bulkBusy || bulkOverCap}
+                onClick={() => setPrintOpen(true)}
+              >
+                <Printer className="mr-1 h-3.5 w-3.5" /> Print
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 shrink-0 px-2 text-xs"
+                onClick={() => toggleSelectAllFiltered()}
+                disabled={items.length === 0}
+              >
+                <CheckSquare className="mr-1.5 h-3.5 w-3.5" />
+                {allFilteredSelected ? "Clear all" : "Select all"}
+              </Button>
+            </div>
           </div>
         )}
       </div>
-
-      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <SheetContent side="bottom" className="rounded-t-2xl pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-          <SheetHeader>
-            <SheetTitle>Filters</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4 space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Department</span>
-              <select
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                className="tg-select h-11 w-full"
-              >
-                <option value="all">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Category</span>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="tg-select h-11 w-full"
-              >
-                <option value="all">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Location</span>
-              <select
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="tg-select h-11 w-full"
-              >
-                <option value="all">All Locations</option>
-                {locations.map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <SheetFooter className="mt-6 flex-row gap-2 sm:space-x-0">
-            <Button variant="outline" className="h-11 flex-1" onClick={clearSheetFilters}>
-              Clear
-            </Button>
-            <Button className="h-11 flex-1" onClick={() => setFiltersOpen(false)}>
-              Apply
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
 
       {/* Mobile card list */}
       {view === "cards" ? (
@@ -758,22 +1018,44 @@ function EquipmentPage() {
                         />
                       </th>
                     )}
-                    <th className="px-4 py-2.5 font-medium">Tag ID</th>
-                    <th className="px-4 py-2.5 font-medium">Gauge / Equipment Name</th>
-                    <th className="px-4 py-2.5 font-medium">Serial No</th>
-                    <th className="px-4 py-2.5 font-medium">Category</th>
-                    <th className="px-4 py-2.5 font-medium">Department</th>
-                    <th className="px-4 py-2.5 font-medium">Location</th>
-                    <th className="px-4 py-2.5 font-medium">Last Calibration</th>
-                    <th className="px-4 py-2.5 font-medium">Next Due</th>
-                    <th className="px-4 py-2.5 font-medium">Status</th>
+                    {colVisible("tag") && <th className="px-4 py-2.5 font-medium">Tag ID</th>}
+                    {colVisible("name") && (
+                      <th className="px-4 py-2.5 font-medium">Gauge / Equipment Name</th>
+                    )}
+                    {colVisible("serial") && (
+                      <th className="px-4 py-2.5 font-medium">Serial No</th>
+                    )}
+                    {colVisible("manufacturer") && (
+                      <th className="px-4 py-2.5 font-medium">Manufacturer</th>
+                    )}
+                    {colVisible("model") && <th className="px-4 py-2.5 font-medium">Model</th>}
+                    {colVisible("category") && (
+                      <th className="px-4 py-2.5 font-medium">Category</th>
+                    )}
+                    {colVisible("department") && (
+                      <th className="px-4 py-2.5 font-medium">Department</th>
+                    )}
+                    {colVisible("location") && (
+                      <th className="px-4 py-2.5 font-medium">Location</th>
+                    )}
+                    {colVisible("owner") && <th className="px-4 py-2.5 font-medium">Owner</th>}
+                    {colVisible("responsibleEmail") && (
+                      <th className="px-4 py-2.5 font-medium">Responsible email</th>
+                    )}
+                    {colVisible("lastCalibration") && (
+                      <th className="px-4 py-2.5 font-medium">Last Calibration</th>
+                    )}
+                    {colVisible("nextCalibration") && (
+                      <th className="px-4 py-2.5 font-medium">Next Due</th>
+                    )}
+                    {colVisible("status") && <th className="px-4 py-2.5 font-medium">Status</th>}
                     <th className="px-4 py-2.5 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={allowWrite && selectMode ? 11 : 10} className="p-4">
+                      <td colSpan={tableColCount} className="p-4">
                         <PageState
                           variant="empty"
                           title={
@@ -799,6 +1081,8 @@ function EquipmentPage() {
                     items.map((e, i) => {
                       const next = parseDate(e.nextCalibration);
                       const last = parseDate(e.lastCalibration);
+                      const showMfrSubline =
+                        !colVisible("manufacturer") && !colVisible("model");
                       return (
                         <tr
                           key={e.id}
@@ -814,34 +1098,78 @@ function EquipmentPage() {
                               />
                             </td>
                           )}
-                          <td className="px-4 py-3 font-mono text-xs text-foreground">{e.tag}</td>
-                          <td className="px-4 py-3">
-                            <Link
-                              to="/workspace/$slug/equipment/$id"
-                              params={{ slug, id: e.id }}
-                              className="font-medium text-foreground hover:text-primary"
-                            >
-                              {e.name}
-                            </Link>
-                            <div className="text-[11px] text-muted-foreground">
-                              {[e.manufacturer, e.model].filter(Boolean).join(" · ") || "—"}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                            {e.serial || "—"}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{e.category || "—"}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{e.department || "—"}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{e.location || "—"}</td>
-                          <td className="px-4 py-3 font-mono text-xs">
-                            {last ? formatDate(last) : "—"}
-                          </td>
-                          <td className="px-4 py-3 font-mono text-xs">
-                            {next ? formatDate(next) : "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={e.status} />
-                          </td>
+                          {colVisible("tag") && (
+                            <td className="px-4 py-3 font-mono text-xs text-foreground">
+                              {e.tag}
+                            </td>
+                          )}
+                          {colVisible("name") && (
+                            <td className="px-4 py-3">
+                              <Link
+                                to="/workspace/$slug/equipment/$id"
+                                params={{ slug, id: e.id }}
+                                className="font-medium text-foreground hover:text-primary"
+                              >
+                                {e.name}
+                              </Link>
+                              {showMfrSubline && (
+                                <div className="text-[11px] text-muted-foreground">
+                                  {[e.manufacturer, e.model].filter(Boolean).join(" · ") || "—"}
+                                </div>
+                              )}
+                            </td>
+                          )}
+                          {colVisible("serial") && (
+                            <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                              {e.serial || "—"}
+                            </td>
+                          )}
+                          {colVisible("manufacturer") && (
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {e.manufacturer || "—"}
+                            </td>
+                          )}
+                          {colVisible("model") && (
+                            <td className="px-4 py-3 text-muted-foreground">{e.model || "—"}</td>
+                          )}
+                          {colVisible("category") && (
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {e.category || "—"}
+                            </td>
+                          )}
+                          {colVisible("department") && (
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {e.department || "—"}
+                            </td>
+                          )}
+                          {colVisible("location") && (
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {e.location || "—"}
+                            </td>
+                          )}
+                          {colVisible("owner") && (
+                            <td className="px-4 py-3 text-muted-foreground">{e.owner || "—"}</td>
+                          )}
+                          {colVisible("responsibleEmail") && (
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {e.responsibleEmail || "—"}
+                            </td>
+                          )}
+                          {colVisible("lastCalibration") && (
+                            <td className="px-4 py-3 font-mono text-xs">
+                              {last ? formatDate(last) : "—"}
+                            </td>
+                          )}
+                          {colVisible("nextCalibration") && (
+                            <td className="px-4 py-3 font-mono text-xs">
+                              {next ? formatDate(next) : "—"}
+                            </td>
+                          )}
+                          {colVisible("status") && (
+                            <td className="px-4 py-3">
+                              <StatusBadge status={e.status} />
+                            </td>
+                          )}
                           <td className="px-4 py-3">
                             {(allowWrite || allowDelete) && (
                               <div className="flex items-center gap-1">
@@ -895,16 +1223,26 @@ function EquipmentPage() {
                 {items.map((e, i) => {
                   const next = parseDate(e.nextCalibration);
                   const days = next ? differenceInCalendarDays(next, new Date()) : null;
-                  return (
-                    <Link
-                      key={e.id}
-                      to="/workspace/$slug/equipment/$id"
-                      params={{ slug, id: e.id }}
-                      className="tg-stagger tg-panel tg-panel-hover tg-focus-ring group rounded-lg border border-border bg-surface p-4"
-                      style={{ "--stagger": Math.min(i, 9) } as CSSProperties}
-                    >
+                  const selecting = allowWrite && selectMode;
+                  const selected = selectedIds.has(e.id);
+                  const cardClass = cn(
+                    "tg-stagger tg-panel tg-panel-hover tg-focus-ring group rounded-lg border border-border bg-surface p-4 text-left",
+                    selecting && selected && "border-primary ring-1 ring-primary/30",
+                  );
+                  const body = (
+                    <>
                       <div className="flex items-start justify-between gap-2">
-                        <div className="font-mono text-[11px] text-muted-foreground">{e.tag}</div>
+                        <div className="flex items-center gap-2">
+                          {selecting && (
+                            <Checkbox
+                              checked={selected}
+                              onCheckedChange={() => toggleSelect(e.id)}
+                              aria-label={`Select ${e.tag || e.name}`}
+                              onClick={(ev) => ev.stopPropagation()}
+                            />
+                          )}
+                          <div className="font-mono text-[11px] text-muted-foreground">{e.tag}</div>
+                        </div>
                         <StatusBadge status={e.status} />
                       </div>
                       <div className="mt-2 font-medium text-foreground group-hover:text-primary">
@@ -925,6 +1263,30 @@ function EquipmentPage() {
                               : `Due ${formatDate(next!)}`}
                         </span>
                       </div>
+                    </>
+                  );
+                  if (selecting) {
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        className={cardClass}
+                        style={{ "--stagger": Math.min(i, 9) } as CSSProperties}
+                        onClick={() => toggleSelect(e.id)}
+                      >
+                        {body}
+                      </button>
+                    );
+                  }
+                  return (
+                    <Link
+                      key={e.id}
+                      to="/workspace/$slug/equipment/$id"
+                      params={{ slug, id: e.id }}
+                      className={cardClass}
+                      style={{ "--stagger": Math.min(i, 9) } as CSSProperties}
+                    >
+                      {body}
                     </Link>
                   );
                 })}

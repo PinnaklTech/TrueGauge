@@ -78,10 +78,13 @@ export function GlobalSearch({
   workspaceSlug,
   storageEnabled,
   role,
+  variant = "field",
 }: {
   workspaceSlug: string;
   storageEnabled: boolean;
   role?: string | null;
+  /** `field` = wide search input (dashboard). `icon` = icon button only. */
+  variant?: "field" | "icon";
 }) {
   const navigate = useNavigate();
   const modKey = useModKeyLabel();
@@ -267,42 +270,70 @@ export function GlobalSearch({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openSearch}
-        className={cn(
-          "tg-focus-ring hidden w-full max-w-md items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted/40 md:flex",
-        )}
-        aria-label="Search workspace"
-      >
-        <Search className="h-3.5 w-3.5 shrink-0" />
-        <span className="flex-1 truncate text-left">Search equipment, certificates…</span>
-        <kbd className="pointer-events-none hidden shrink-0 items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex">
-          {modKey}
-          <span className="text-[9px]">K</span>
-        </kbd>
-      </button>
+      {variant === "field" ? (
+        <>
+          <button
+            type="button"
+            onClick={openSearch}
+            className={cn(
+              "tg-focus-ring hidden w-full max-w-md items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted/40 md:flex",
+            )}
+            aria-label="Search workspace"
+          >
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 truncate text-left">Search equipment, certificates…</span>
+            <kbd className="pointer-events-none hidden shrink-0 items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground sm:inline-flex">
+              {modKey}
+              <span className="text-[9px]">K</span>
+            </kbd>
+          </button>
 
-      <button
-        type="button"
-        onClick={openSearch}
-        className="tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
-        aria-label="Search workspace"
-      >
-        <Search className="h-5 w-5" />
-      </button>
+          <button
+            type="button"
+            onClick={openSearch}
+            className="tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
+            aria-label="Search workspace"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={openSearch}
+          className="tg-focus-ring inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:h-8 md:w-8"
+          aria-label="Search workspace"
+          title={`Search (${modKey}+K)`}
+        >
+          <Search className="h-4 w-4" />
+        </button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
-          className="overflow-hidden p-0 shadow-lg sm:max-w-lg [&>button]:hidden"
+          className={cn(
+            "gap-0 overflow-hidden p-0 shadow-lg",
+            // Mobile: near full-width panel under the status bar (easy to reach + keyboard)
+            "w-[calc(100%-1rem)] max-w-none rounded-xl",
+            "top-[max(0.5rem,env(safe-area-inset-top))] translate-y-0",
+            "max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem))]",
+            // Desktop: classic centered palette
+            "sm:top-[50%] sm:w-full sm:max-w-lg sm:translate-y-[-50%] sm:rounded-lg sm:max-h-[min(80vh,32rem)]",
+            // Keep close reachable on touch (was fully hidden)
+            "[&>button]:right-2 [&>button]:top-2",
+          )}
           aria-labelledby={titleId}
         >
           <DialogTitle id={titleId} className="sr-only">
             Search workspace
           </DialogTitle>
-          <Command shouldFilter={false} className="rounded-lg border-0">
+          <Command
+            shouldFilter={false}
+            className="flex max-h-[inherit] flex-col rounded-xl border-0 sm:rounded-lg"
+          >
             <CommandInput
-              placeholder="Search or paste QR URL / tag / serial…"
+              placeholder="Search tag, name, serial, or paste QR…"
+              className="h-12 pr-12 text-base sm:h-10 sm:text-sm"
               value={query}
               onValueChange={setQuery}
               onKeyDown={(e) => {
@@ -319,9 +350,9 @@ export function GlobalSearch({
                 }
               }}
             />
-            <CommandList>
+            <CommandList className="max-h-[min(70dvh,28rem)] flex-1 overscroll-contain pb-[env(safe-area-inset-bottom)] sm:max-h-[min(55vh,22rem)]">
               {loading ? (
-                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Searching…
                 </div>
@@ -337,6 +368,7 @@ export function GlobalSearch({
                       <CommandItem
                         key={item.key}
                         value={`goto-${item.key}`}
+                        className="min-h-11 gap-3 px-3 py-2.5 text-[15px] sm:min-h-0 sm:gap-2 sm:px-2 sm:py-1.5 sm:text-sm"
                         onSelect={() => goTo(item.key)}
                       >
                         <Icon className="text-muted-foreground" />
@@ -351,10 +383,11 @@ export function GlobalSearch({
                 <CommandGroup heading="Scan">
                   <CommandItem
                     value={`resolve-${query}`}
+                    className="min-h-11 gap-3 px-3 py-2.5 text-[15px] sm:min-h-0 sm:gap-2 sm:px-2 sm:py-1.5 sm:text-sm"
                     onSelect={() => void resolveCode(query)}
                   >
                     <ScanLine className="text-muted-foreground" />
-                    <span>Open code “{query.trim()}”</span>
+                    <span className="truncate">Open code “{query.trim()}”</span>
                   </CommandItem>
                 </CommandGroup>
               ) : null}
@@ -365,11 +398,14 @@ export function GlobalSearch({
                     <CommandItem
                       key={item.id}
                       value={`eq-${item.id}`}
+                      className="min-h-12 gap-3 px-3 py-2.5 sm:min-h-0 sm:gap-2 sm:px-2 sm:py-1.5"
                       onSelect={() => goEquipment(item.id)}
                     >
                       <Wrench className="text-muted-foreground" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{item.name || item.tag}</p>
+                        <p className="truncate text-[15px] font-medium sm:text-sm">
+                          {item.name || item.tag}
+                        </p>
                         <p className="truncate text-xs text-muted-foreground">
                           {[item.tag, item.serial].filter(Boolean).join(" · ")}
                         </p>
@@ -387,11 +423,14 @@ export function GlobalSearch({
                       <CommandItem
                         key={cert.id}
                         value={`cert-${cert.id}`}
+                        className="min-h-12 gap-3 px-3 py-2.5 sm:min-h-0 sm:gap-2 sm:px-2 sm:py-1.5"
                         onSelect={() => goCertificate(cert)}
                       >
                         <FileCheck2 className="text-muted-foreground" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{cert.fileName}</p>
+                          <p className="truncate text-[15px] font-medium sm:text-sm">
+                            {cert.fileName}
+                          </p>
                           <p className="truncate text-xs text-muted-foreground">
                             {[cert.equipmentTag, cert.equipmentName].filter(Boolean).join(" · ")}
                           </p>

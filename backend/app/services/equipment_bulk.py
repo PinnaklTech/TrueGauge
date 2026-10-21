@@ -523,3 +523,43 @@ def run_import(
     created = import_equipment_rows(db, tenant_id=tenant_id, parsed=parsed)
     result.created = created
     return result
+
+
+BULK_PATCH_FIELDS = frozenset(
+    {"category", "department", "location", "owner", "responsible_email", "status"}
+)
+MAX_BULK_IDS = 500
+
+
+def normalize_bulk_ids(ids: list[str]) -> list[str]:
+    """Deduplicate while preserving order; drop blanks."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in ids:
+        eid = (raw or "").strip()
+        if not eid or eid in seen:
+            continue
+        seen.add(eid)
+        out.append(eid)
+    return out
+
+
+def apply_equipment_bulk_patch(row: EquipmentCache, patch: dict[str, Any]) -> list[str]:
+    """Apply a validated bulk patch dict onto a row. Returns field names changed.
+
+    Status is only touched when present in the patch (preserves failed/inactive).
+    """
+    data = {k: v for k, v in patch.items() if k in BULK_PATCH_FIELDS}
+    changed: list[str] = []
+
+    for key, value in data.items():
+        if isinstance(value, str) and key not in ("status", "responsible_email"):
+            value = value.strip()
+        if key == "responsible_email" and isinstance(value, str):
+            value = value.strip() or None
+        setattr(row, key, value)
+        changed.append(key)
+
+    if changed:
+        row.synced_at = datetime.now(timezone.utc)
+    return changed
