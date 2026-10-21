@@ -75,7 +75,12 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
       if (ok) return request<T>(path, init, true);
       clearToken();
       if (!window.location.pathname.startsWith("/auth")) {
-        window.location.href = "/auth/login";
+        const here = `${window.location.pathname}${window.location.search}`;
+        const qs =
+          here.startsWith("/") && !here.startsWith("//") && !here.includes("://")
+            ? `?returnTo=${encodeURIComponent(here)}`
+            : "";
+        window.location.href = `/auth/login${qs}`;
       }
     }
     let detail = res.statusText;
@@ -170,12 +175,14 @@ interface ApiEquipment {
   frequency_days: number;
   owner: string;
   responsible_email: string | null;
+  qr_token?: string | null;
 }
 
 export type AppEquipment = Equipment & {
   source: "local" | "odoo";
   odooId: number | null;
   responsibleEmail: string | null;
+  qrToken?: string | null;
 };
 
 function toEquipment(row: ApiEquipment): AppEquipment {
@@ -197,7 +204,73 @@ function toEquipment(row: ApiEquipment): AppEquipment {
     source: row.source,
     odooId: row.odoo_id,
     responsibleEmail: row.responsible_email,
+    qrToken: row.qr_token ?? null,
   };
+}
+
+export interface ScanResolveMatch {
+  id: string;
+  name: string;
+  tag: string;
+  status: CalStatus;
+  serial: string;
+}
+
+export interface ScanResolveResult {
+  equipment: ScanResolveMatch | null;
+  matches: ScanResolveMatch[] | null;
+  matchType: "token" | "tag" | "serial" | null;
+}
+
+export async function resolveScanCode(code: string): Promise<ScanResolveResult> {
+  const data = await request<{
+    equipment?: ScanResolveMatch | null;
+    matches?: ScanResolveMatch[] | null;
+    match_type?: "token" | "tag" | "serial" | null;
+  }>(`/api/scan/resolve?code=${encodeURIComponent(code)}`);
+  return {
+    equipment: data.equipment ?? null,
+    matches: data.matches ?? null,
+    matchType: data.match_type ?? null,
+  };
+}
+
+export interface EquipmentLabel {
+  id: string;
+  name: string;
+  tag: string;
+  serial: string;
+  qr_token: string;
+  org_name: string;
+  department: string;
+  location: string;
+}
+
+export async function fetchEquipmentLabels(ids: string[]): Promise<EquipmentLabel[]> {
+  if (ids.length === 0) return [];
+  const data = await request<{ items: EquipmentLabel[] }>(
+    `/api/equipment/labels?ids=${ids.map(encodeURIComponent).join(",")}`,
+  );
+  return data.items;
+}
+
+export async function auditLabelsPrinted(payload: {
+  ids: string[];
+  count?: number;
+  preset?: string;
+}): Promise<void> {
+  await request<void>("/api/equipment/labels/printed", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function regenerateQrToken(equipmentId: string): Promise<AppEquipment> {
+  const row = await request<ApiEquipment>(
+    `/api/equipment/${encodeURIComponent(equipmentId)}/qr-token/regenerate`,
+    { method: "POST" },
+  );
+  return toEquipment(row);
 }
 
 export async function getHealth() {
@@ -255,6 +328,121 @@ export async function updateEquipment(id: string, payload: Partial<EquipmentPayl
 
 export async function deleteEquipment(id: string) {
   await request<void>(`/api/equipment/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export type EquipmentImportRowError = {
+  row: number;
+  field: string;
+  message: string;
+};
+
+export type EquipmentImportResult = {
+  created: number;
+  skipped: number;
+  failed: number;
+  errors: EquipmentImportRowError[];
+};
+
+async function downloadAuthenticatedFile(
+  path: string,
+  fallbackFilename: string,
+): Promise<{ filename: string }> {
+  const doFetch = async () => {
+    const token = typeof window !== "undefined" ? getToken() : null;
+    return fetch(`${API_URL}${path}`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401) {
+    const ok = await tryRefresh();
+    if (ok) res = await doFetch();
+    else {
+      clearToken();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/auth")) {
+        window.location.href = "/auth/login";
+      }
+      throw new ApiError("Session expired — please sign in again", 401);
+    }
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(detail || `Download failed (${res.status})`, res.status);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = /filename="([^"]+)"/i.exec(disposition);
+  const filename = match?.[1] || fallbackFilename;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return { filename };
+}
+
+export async function downloadEquipmentTemplate() {
+  return downloadAuthenticatedFile(
+    "/api/equipment/import/template.csv",
+    "truegage-equipment-template.csv",
+  );
+}
+
+export async function exportEquipmentCsv() {
+  return downloadAuthenticatedFile(
+    "/api/equipment/export.csv",
+    "truegage-equipment-export.csv",
+  );
+}
+
+export async function importEquipmentFile(file: File): Promise<EquipmentImportResult> {
+  const doFetch = async () => {
+    const token = typeof window !== "undefined" ? getToken() : null;
+    const body = new FormData();
+    body.append("file", file);
+    return fetch(`${API_URL}/api/equipment/import`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body,
+    });
+  };
+
+  let res = await doFetch();
+  if (res.status === 401) {
+    const ok = await tryRefresh();
+    if (ok) res = await doFetch();
+    else {
+      clearToken();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/auth")) {
+        window.location.href = "/auth/login";
+      }
+      throw new ApiError("Session expired — please sign in again", 401);
+    }
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(detail || `Import failed (${res.status})`, res.status);
+  }
+  return (await res.json()) as EquipmentImportResult;
 }
 
 export interface TeamMember {
@@ -599,6 +787,18 @@ export async function uploadCertificateFile(opts: {
 export type UserRole = "platform_admin" | "admin" | "qa" | "technician" | "member";
 export type OrgUserRole = "admin" | "qa" | "technician" | "member";
 
+export interface EffectiveSettings {
+  timezone: string;
+  date_format: string;
+  time_format: string;
+  week_start: string;
+  reminder_send_hour: number;
+  reminder_skip_weekends: boolean;
+  allow_user_display_override: boolean;
+  allow_user_channel_toggle: boolean;
+  sources?: Record<string, string>;
+}
+
 export interface AuthUser {
   id: number;
   email: string;
@@ -621,6 +821,10 @@ export interface AuthUser {
   updated_at?: string | null;
   profile_setup_at?: string | null;
   product_tour_at?: string | null;
+  effective_settings?: EffectiveSettings | null;
+  timezone_override?: string | null;
+  date_format_override?: string | null;
+  time_format_override?: string | null;
 }
 
 export interface AuthSession {
@@ -665,6 +869,23 @@ export interface ReminderRulesApi {
   remind_weekly_digest: boolean;
   reminder_hour_local: number;
   last_daily_run_at?: string | null;
+}
+
+export interface OrgSettingsApi {
+  timezone: string;
+  date_format: string;
+  time_format: string;
+  week_start: string;
+  reminder_send_hour: number;
+  reminder_skip_weekends: boolean;
+  allow_user_display_override: boolean;
+  allow_user_channel_toggle: boolean;
+  remind_30d: boolean;
+  remind_14d: boolean;
+  remind_7d: boolean;
+  remind_1d: boolean;
+  remind_overdue_daily: boolean;
+  remind_weekly_digest: boolean;
 }
 
 export interface AppNotificationApi {
@@ -733,6 +954,42 @@ export async function register(payload: {
 
 export async function getMe() {
   return request<AuthUser & { tenant_id: number; tenant_name: string; tenant_slug: string }>("/api/auth/me");
+}
+
+export async function updateMyPreferences(payload: {
+  timezone_override?: string | null;
+  date_format_override?: string | null;
+  time_format_override?: string | null;
+  clear_timezone_override?: boolean;
+  clear_date_format_override?: boolean;
+  clear_time_format_override?: boolean;
+  notify_email?: boolean;
+  notify_in_app?: boolean;
+}) {
+  return request<AuthUser & { tenant_id: number; tenant_name: string; tenant_slug: string }>(
+    "/api/me/preferences",
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function getOrgSettings() {
+  return request<OrgSettingsApi>("/api/org/settings");
+}
+
+export async function patchOrgSettings(payload: Partial<OrgSettingsApi>) {
+  return request<OrgSettingsApi>("/api/org/settings", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function sendTestReminder() {
+  return request<{ ok: boolean; message: string }>("/api/org/settings/test-reminder", {
+    method: "POST",
+  });
 }
 
 export async function listTenants() {
@@ -948,14 +1205,62 @@ export async function listAuditEvents(limit = 40) {
 export type ReportType = "inventory" | "overdue" | "due" | "compliance";
 export type ReportFormat = "csv" | "pdf";
 
+export type GeneratedReportItem = {
+  id: number;
+  reportId: string;
+  reportType: ReportType | string;
+  filename: string;
+  generatedByName: string;
+  generatedByRole: string;
+  rowCount: number;
+  createdAt: string;
+};
+
 /** Download a generated report file (CSV or PDF) from the API. */
 export async function downloadReport(opts: {
   type: ReportType;
-  format: ReportFormat;
-}): Promise<{ filename: string; rowCount: number }> {
-  const sp = new URLSearchParams({ type: opts.type, format: opts.format });
-  const path = `/api/reports/download?${sp.toString()}`;
+  format?: ReportFormat;
+}): Promise<{ filename: string; rowCount: number; reportId: string }> {
+  const format = opts.format ?? "pdf";
+  const sp = new URLSearchParams({ type: opts.type, format });
+  return downloadReportBlob(`/api/reports/download?${sp.toString()}`, format);
+}
 
+export async function listReportHistory(): Promise<GeneratedReportItem[]> {
+  const data = await request<{
+    items: Array<{
+      id: number;
+      report_id: string;
+      report_type: string;
+      filename: string;
+      generated_by_name: string;
+      generated_by_role: string;
+      row_count: number;
+      created_at: string;
+    }>;
+  }>("/api/reports/history");
+  return (data.items ?? []).map((r) => ({
+    id: r.id,
+    reportId: r.report_id,
+    reportType: r.report_type,
+    filename: r.filename,
+    generatedByName: r.generated_by_name,
+    generatedByRole: r.generated_by_role,
+    rowCount: r.row_count,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function downloadStoredReport(
+  id: number,
+): Promise<{ filename: string; rowCount: number; reportId: string }> {
+  return downloadReportBlob(`/api/reports/history/${id}/download`, "pdf");
+}
+
+async function downloadReportBlob(
+  path: string,
+  format: ReportFormat,
+): Promise<{ filename: string; rowCount: number; reportId: string }> {
   const doFetch = async () => {
     const token = typeof window !== "undefined" ? getToken() : null;
     return fetch(`${API_URL}${path}`, {
@@ -989,21 +1294,27 @@ export async function downloadReport(opts: {
   }
 
   const blob = await res.blob();
+  const reportId = (res.headers.get("X-Report-Id") || "").trim();
   const disposition = res.headers.get("Content-Disposition") || "";
-  const match = /filename="([^"]+)"/i.exec(disposition);
+  const match = /filename\*?=(?:UTF-8''|")?([^\";]+)"?/i.exec(disposition);
+  const ext = format === "pdf" ? "pdf" : "csv";
+  const fromDisposition = match?.[1]
+    ? decodeURIComponent(match[1].replace(/["']/g, ""))
+    : "";
   const filename =
-    match?.[1] ||
-    `TrueGage-${opts.type}.${opts.format === "pdf" ? "pdf" : "csv"}`;
+    (reportId ? `${reportId}.${ext}` : "") || fromDisposition || `report.${ext}`;
   const rowCount = Number(res.headers.get("X-Report-Rows") || "0");
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
 
-  return { filename, rowCount };
+  return { filename, rowCount, reportId };
 }
 
 export type AdminUserCreatePayload = {

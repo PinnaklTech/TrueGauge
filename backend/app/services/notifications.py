@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AppNotification, AppSettings, EquipmentCache, NotificationRead, new_notification_id
 from app.services.equipment_sync import refresh_equipment_statuses
+from app.services.org_settings import format_date, org_defaults_from_row
 
 DEFAULT_RULES = {
     "remind_30d": False,
@@ -91,6 +92,11 @@ def sync_due_date_notifications(
     as_of = today or date.today()
     settings_row = db.query(AppSettings).filter(AppSettings.tenant_id == tenant_id).one_or_none()
     active_rules = rules if rules is not None else _rules_from_settings(settings_row)
+    date_fmt = (
+        org_defaults_from_row(settings_row)["date_format"]
+        if settings_row is not None
+        else "DD MMM YYYY"
+    )
 
     eq_rows = db.query(EquipmentCache).filter(EquipmentCache.tenant_id == tenant_id).all()
     refresh_equipment_statuses(db, eq_rows, today=as_of, commit=False)
@@ -109,6 +115,7 @@ def sync_due_date_notifications(
         title = ""
         body = ""
         event_date = ""
+        due_disp = format_date(eq.next_calibration, date_fmt)
 
         if eq.status == "failed" or days < 0:
             if not active_rules.get("remind_overdue_daily", False):
@@ -117,7 +124,7 @@ def sync_due_date_notifications(
             title = "Calibration Overdue"
             body = (
                 f"{eq.name} ({eq.tag}) next calibration date was "
-                f"{eq.next_calibration.isoformat()} and is now overdue."
+                f"{due_disp} and is now overdue."
             )
             event_date = eq.next_calibration.isoformat()
         elif days in (0, 1) and active_rules.get("remind_1d", False):
@@ -126,7 +133,7 @@ def sync_due_date_notifications(
             title = f"Calibration Due {label.capitalize()}"
             body = (
                 f"{eq.name} ({eq.tag}) is scheduled for calibration on "
-                f"{eq.next_calibration.isoformat()}."
+                f"{due_disp}."
             )
             event_date = as_of.isoformat()
         elif days == 7 and active_rules.get("remind_7d", False):
@@ -134,7 +141,7 @@ def sync_due_date_notifications(
             title = "Calibration Due in 7 Days"
             body = (
                 f"{eq.name} ({eq.tag}) is scheduled for calibration on "
-                f"{eq.next_calibration.isoformat()}."
+                f"{due_disp}."
             )
             event_date = as_of.isoformat()
         elif days == 14 and active_rules.get("remind_14d", False):
@@ -142,7 +149,7 @@ def sync_due_date_notifications(
             title = "Calibration Due in 14 Days"
             body = (
                 f"{eq.name} ({eq.tag}) is scheduled for calibration on "
-                f"{eq.next_calibration.isoformat()}."
+                f"{due_disp}."
             )
             event_date = as_of.isoformat()
         elif days == 30 and active_rules.get("remind_30d", False):
@@ -150,7 +157,7 @@ def sync_due_date_notifications(
             title = "Calibration Due in 30 Days"
             body = (
                 f"{eq.name} ({eq.tag}) is scheduled for calibration on "
-                f"{eq.next_calibration.isoformat()}."
+                f"{due_disp}."
             )
             event_date = as_of.isoformat()
         else:

@@ -9,46 +9,38 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as WorkspaceSlugRouteImport } from './routes/workspace.$slug'
-import { Route as AuthRegisterRouteImport } from './routes/auth.register'
-import { Route as AuthLoginRouteImport } from './routes/auth.login'
-import { Route as AuthHandoffRouteImport } from './routes/auth.handoff'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
+import { Route as AuthHandoffRouteImport } from './routes/auth.handoff'
+import { Route as AuthLoginRouteImport } from './routes/auth.login'
+import { Route as AuthRegisterRouteImport } from './routes/auth.register'
+import { Route as QTokenRouteImport } from './routes/q.$token'
+import { Route as WorkspaceSlugRouteImport } from './routes/workspace.$slug'
 import { Route as WorkspaceSlugIndexRouteImport } from './routes/workspace.$slug.index'
-import { Route as WorkspaceSlugSettingsRouteImport } from './routes/workspace.$slug.settings'
-import { Route as WorkspaceSlugReportsRouteImport } from './routes/workspace.$slug.reports'
-import { Route as WorkspaceSlugProfileRouteImport } from './routes/workspace.$slug.profile'
-import { Route as WorkspaceSlugNotificationsRouteImport } from './routes/workspace.$slug.notifications'
-import { Route as WorkspaceSlugCertificatesRouteImport } from './routes/workspace.$slug.certificates'
 import { Route as WorkspaceSlugCalibrationsRouteImport } from './routes/workspace.$slug.calibrations'
+import { Route as WorkspaceSlugCertificatesRouteImport } from './routes/workspace.$slug.certificates'
+import { Route as WorkspaceSlugNotificationsRouteImport } from './routes/workspace.$slug.notifications'
+import { Route as WorkspaceSlugProfileRouteImport } from './routes/workspace.$slug.profile'
+import { Route as WorkspaceSlugReportsRouteImport } from './routes/workspace.$slug.reports'
+import { Route as WorkspaceSlugScanRouteImport } from './routes/workspace.$slug.scan'
+import { Route as WorkspaceSlugSettingsRouteImport } from './routes/workspace.$slug.settings'
 import { Route as WorkspaceSlugEquipmentIndexRouteImport } from './routes/workspace.$slug.equipment.index'
 import { Route as WorkspaceSlugEquipmentIdRouteImport } from './routes/workspace.$slug.equipment.$id'
 
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceSlugRoute = WorkspaceSlugRouteImport.update({
-  id: '/workspace/$slug',
-  path: '/workspace/$slug',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthRegisterRoute = AuthRegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthLoginRoute = AuthLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const AuthForgotRoute = AuthForgotRouteImport.update({
+  id: '/forgot',
+  path: '/forgot',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthHandoffRoute = AuthHandoffRouteImport.update({
@@ -56,35 +48,35 @@ const AuthHandoffRoute = AuthHandoffRouteImport.update({
   path: '/handoff',
   getParentRoute: () => AuthRoute,
 } as any)
-const AuthForgotRoute = AuthForgotRouteImport.update({
-  id: '/forgot',
-  path: '/forgot',
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => AuthRoute,
+} as any)
+const AuthRegisterRoute = AuthRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => AuthRoute,
+} as any)
+const QTokenRoute = QTokenRouteImport.update({
+  id: '/q/$token',
+  path: '/q/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceSlugRoute = WorkspaceSlugRouteImport.update({
+  id: '/workspace/$slug',
+  path: '/workspace/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspaceSlugIndexRoute = WorkspaceSlugIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WorkspaceSlugRoute,
 } as any)
-const WorkspaceSlugSettingsRoute = WorkspaceSlugSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => WorkspaceSlugRoute,
-} as any)
-const WorkspaceSlugReportsRoute = WorkspaceSlugReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => WorkspaceSlugRoute,
-} as any)
-const WorkspaceSlugProfileRoute = WorkspaceSlugProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => WorkspaceSlugRoute,
-} as any)
-const WorkspaceSlugNotificationsRoute =
-  WorkspaceSlugNotificationsRouteImport.update({
-    id: '/notifications',
-    path: '/notifications',
+const WorkspaceSlugCalibrationsRoute =
+  WorkspaceSlugCalibrationsRouteImport.update({
+    id: '/calibrations',
+    path: '/calibrations',
     getParentRoute: () => WorkspaceSlugRoute,
   } as any)
 const WorkspaceSlugCertificatesRoute =
@@ -93,12 +85,32 @@ const WorkspaceSlugCertificatesRoute =
     path: '/certificates',
     getParentRoute: () => WorkspaceSlugRoute,
   } as any)
-const WorkspaceSlugCalibrationsRoute =
-  WorkspaceSlugCalibrationsRouteImport.update({
-    id: '/calibrations',
-    path: '/calibrations',
+const WorkspaceSlugNotificationsRoute =
+  WorkspaceSlugNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
     getParentRoute: () => WorkspaceSlugRoute,
   } as any)
+const WorkspaceSlugProfileRoute = WorkspaceSlugProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugReportsRoute = WorkspaceSlugReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugScanRoute = WorkspaceSlugScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
+const WorkspaceSlugSettingsRoute = WorkspaceSlugSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => WorkspaceSlugRoute,
+} as any)
 const WorkspaceSlugEquipmentIndexRoute =
   WorkspaceSlugEquipmentIndexRouteImport.update({
     id: '/equipment/',
@@ -119,12 +131,14 @@ export interface FileRoutesByFullPath {
   '/auth/handoff': typeof AuthHandoffRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/q/$token': typeof QTokenRoute
   '/workspace/$slug': typeof WorkspaceSlugRouteWithChildren
   '/workspace/$slug/calibrations': typeof WorkspaceSlugCalibrationsRoute
   '/workspace/$slug/certificates': typeof WorkspaceSlugCertificatesRoute
   '/workspace/$slug/notifications': typeof WorkspaceSlugNotificationsRoute
   '/workspace/$slug/profile': typeof WorkspaceSlugProfileRoute
   '/workspace/$slug/reports': typeof WorkspaceSlugReportsRoute
+  '/workspace/$slug/scan': typeof WorkspaceSlugScanRoute
   '/workspace/$slug/settings': typeof WorkspaceSlugSettingsRoute
   '/workspace/$slug/': typeof WorkspaceSlugIndexRoute
   '/workspace/$slug/equipment/$id': typeof WorkspaceSlugEquipmentIdRoute
@@ -137,11 +151,13 @@ export interface FileRoutesByTo {
   '/auth/handoff': typeof AuthHandoffRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/q/$token': typeof QTokenRoute
   '/workspace/$slug/calibrations': typeof WorkspaceSlugCalibrationsRoute
   '/workspace/$slug/certificates': typeof WorkspaceSlugCertificatesRoute
   '/workspace/$slug/notifications': typeof WorkspaceSlugNotificationsRoute
   '/workspace/$slug/profile': typeof WorkspaceSlugProfileRoute
   '/workspace/$slug/reports': typeof WorkspaceSlugReportsRoute
+  '/workspace/$slug/scan': typeof WorkspaceSlugScanRoute
   '/workspace/$slug/settings': typeof WorkspaceSlugSettingsRoute
   '/workspace/$slug': typeof WorkspaceSlugIndexRoute
   '/workspace/$slug/equipment/$id': typeof WorkspaceSlugEquipmentIdRoute
@@ -155,12 +171,14 @@ export interface FileRoutesById {
   '/auth/handoff': typeof AuthHandoffRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/q/$token': typeof QTokenRoute
   '/workspace/$slug': typeof WorkspaceSlugRouteWithChildren
   '/workspace/$slug/calibrations': typeof WorkspaceSlugCalibrationsRoute
   '/workspace/$slug/certificates': typeof WorkspaceSlugCertificatesRoute
   '/workspace/$slug/notifications': typeof WorkspaceSlugNotificationsRoute
   '/workspace/$slug/profile': typeof WorkspaceSlugProfileRoute
   '/workspace/$slug/reports': typeof WorkspaceSlugReportsRoute
+  '/workspace/$slug/scan': typeof WorkspaceSlugScanRoute
   '/workspace/$slug/settings': typeof WorkspaceSlugSettingsRoute
   '/workspace/$slug/': typeof WorkspaceSlugIndexRoute
   '/workspace/$slug/equipment/$id': typeof WorkspaceSlugEquipmentIdRoute
@@ -175,12 +193,14 @@ export interface FileRouteTypes {
     | '/auth/handoff'
     | '/auth/login'
     | '/auth/register'
+    | '/q/$token'
     | '/workspace/$slug'
     | '/workspace/$slug/calibrations'
     | '/workspace/$slug/certificates'
     | '/workspace/$slug/notifications'
     | '/workspace/$slug/profile'
     | '/workspace/$slug/reports'
+    | '/workspace/$slug/scan'
     | '/workspace/$slug/settings'
     | '/workspace/$slug/'
     | '/workspace/$slug/equipment/$id'
@@ -193,11 +213,13 @@ export interface FileRouteTypes {
     | '/auth/handoff'
     | '/auth/login'
     | '/auth/register'
+    | '/q/$token'
     | '/workspace/$slug/calibrations'
     | '/workspace/$slug/certificates'
     | '/workspace/$slug/notifications'
     | '/workspace/$slug/profile'
     | '/workspace/$slug/reports'
+    | '/workspace/$slug/scan'
     | '/workspace/$slug/settings'
     | '/workspace/$slug'
     | '/workspace/$slug/equipment/$id'
@@ -210,12 +232,14 @@ export interface FileRouteTypes {
     | '/auth/handoff'
     | '/auth/login'
     | '/auth/register'
+    | '/q/$token'
     | '/workspace/$slug'
     | '/workspace/$slug/calibrations'
     | '/workspace/$slug/certificates'
     | '/workspace/$slug/notifications'
     | '/workspace/$slug/profile'
     | '/workspace/$slug/reports'
+    | '/workspace/$slug/scan'
     | '/workspace/$slug/settings'
     | '/workspace/$slug/'
     | '/workspace/$slug/equipment/$id'
@@ -225,18 +249,12 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
+  QTokenRoute: typeof QTokenRoute
   WorkspaceSlugRoute: typeof WorkspaceSlugRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -244,25 +262,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace/$slug': {
-      id: '/workspace/$slug'
-      path: '/workspace/$slug'
-      fullPath: '/workspace/$slug'
-      preLoaderRoute: typeof WorkspaceSlugRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/register': {
-      id: '/auth/register'
-      path: '/register'
-      fullPath: '/auth/register'
-      preLoaderRoute: typeof AuthRegisterRouteImport
-      parentRoute: typeof AuthRoute
-    }
-    '/auth/login': {
-      id: '/auth/login'
-      path: '/login'
-      fullPath: '/auth/login'
-      preLoaderRoute: typeof AuthLoginRouteImport
+    '/auth/forgot': {
+      id: '/auth/forgot'
+      path: '/forgot'
+      fullPath: '/auth/forgot'
+      preLoaderRoute: typeof AuthForgotRouteImport
       parentRoute: typeof AuthRoute
     }
     '/auth/handoff': {
@@ -272,12 +283,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthHandoffRouteImport
       parentRoute: typeof AuthRoute
     }
-    '/auth/forgot': {
-      id: '/auth/forgot'
-      path: '/forgot'
-      fullPath: '/auth/forgot'
-      preLoaderRoute: typeof AuthForgotRouteImport
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof AuthRoute
+    }
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/q/$token': {
+      id: '/q/$token'
+      path: '/q/$token'
+      fullPath: '/q/$token'
+      preLoaderRoute: typeof QTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace/$slug': {
+      id: '/workspace/$slug'
+      path: '/workspace/$slug'
+      fullPath: '/workspace/$slug'
+      preLoaderRoute: typeof WorkspaceSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/workspace/$slug/': {
       id: '/workspace/$slug/'
@@ -286,32 +318,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceSlugIndexRouteImport
       parentRoute: typeof WorkspaceSlugRoute
     }
-    '/workspace/$slug/settings': {
-      id: '/workspace/$slug/settings'
-      path: '/settings'
-      fullPath: '/workspace/$slug/settings'
-      preLoaderRoute: typeof WorkspaceSlugSettingsRouteImport
-      parentRoute: typeof WorkspaceSlugRoute
-    }
-    '/workspace/$slug/reports': {
-      id: '/workspace/$slug/reports'
-      path: '/reports'
-      fullPath: '/workspace/$slug/reports'
-      preLoaderRoute: typeof WorkspaceSlugReportsRouteImport
-      parentRoute: typeof WorkspaceSlugRoute
-    }
-    '/workspace/$slug/profile': {
-      id: '/workspace/$slug/profile'
-      path: '/profile'
-      fullPath: '/workspace/$slug/profile'
-      preLoaderRoute: typeof WorkspaceSlugProfileRouteImport
-      parentRoute: typeof WorkspaceSlugRoute
-    }
-    '/workspace/$slug/notifications': {
-      id: '/workspace/$slug/notifications'
-      path: '/notifications'
-      fullPath: '/workspace/$slug/notifications'
-      preLoaderRoute: typeof WorkspaceSlugNotificationsRouteImport
+    '/workspace/$slug/calibrations': {
+      id: '/workspace/$slug/calibrations'
+      path: '/calibrations'
+      fullPath: '/workspace/$slug/calibrations'
+      preLoaderRoute: typeof WorkspaceSlugCalibrationsRouteImport
       parentRoute: typeof WorkspaceSlugRoute
     }
     '/workspace/$slug/certificates': {
@@ -321,11 +332,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceSlugCertificatesRouteImport
       parentRoute: typeof WorkspaceSlugRoute
     }
-    '/workspace/$slug/calibrations': {
-      id: '/workspace/$slug/calibrations'
-      path: '/calibrations'
-      fullPath: '/workspace/$slug/calibrations'
-      preLoaderRoute: typeof WorkspaceSlugCalibrationsRouteImport
+    '/workspace/$slug/notifications': {
+      id: '/workspace/$slug/notifications'
+      path: '/notifications'
+      fullPath: '/workspace/$slug/notifications'
+      preLoaderRoute: typeof WorkspaceSlugNotificationsRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/profile': {
+      id: '/workspace/$slug/profile'
+      path: '/profile'
+      fullPath: '/workspace/$slug/profile'
+      preLoaderRoute: typeof WorkspaceSlugProfileRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/reports': {
+      id: '/workspace/$slug/reports'
+      path: '/reports'
+      fullPath: '/workspace/$slug/reports'
+      preLoaderRoute: typeof WorkspaceSlugReportsRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/scan': {
+      id: '/workspace/$slug/scan'
+      path: '/scan'
+      fullPath: '/workspace/$slug/scan'
+      preLoaderRoute: typeof WorkspaceSlugScanRouteImport
+      parentRoute: typeof WorkspaceSlugRoute
+    }
+    '/workspace/$slug/settings': {
+      id: '/workspace/$slug/settings'
+      path: '/settings'
+      fullPath: '/workspace/$slug/settings'
+      preLoaderRoute: typeof WorkspaceSlugSettingsRouteImport
       parentRoute: typeof WorkspaceSlugRoute
     }
     '/workspace/$slug/equipment/': {
@@ -367,6 +406,7 @@ interface WorkspaceSlugRouteChildren {
   WorkspaceSlugNotificationsRoute: typeof WorkspaceSlugNotificationsRoute
   WorkspaceSlugProfileRoute: typeof WorkspaceSlugProfileRoute
   WorkspaceSlugReportsRoute: typeof WorkspaceSlugReportsRoute
+  WorkspaceSlugScanRoute: typeof WorkspaceSlugScanRoute
   WorkspaceSlugSettingsRoute: typeof WorkspaceSlugSettingsRoute
   WorkspaceSlugIndexRoute: typeof WorkspaceSlugIndexRoute
   WorkspaceSlugEquipmentIdRoute: typeof WorkspaceSlugEquipmentIdRoute
@@ -379,6 +419,7 @@ const WorkspaceSlugRouteChildren: WorkspaceSlugRouteChildren = {
   WorkspaceSlugNotificationsRoute: WorkspaceSlugNotificationsRoute,
   WorkspaceSlugProfileRoute: WorkspaceSlugProfileRoute,
   WorkspaceSlugReportsRoute: WorkspaceSlugReportsRoute,
+  WorkspaceSlugScanRoute: WorkspaceSlugScanRoute,
   WorkspaceSlugSettingsRoute: WorkspaceSlugSettingsRoute,
   WorkspaceSlugIndexRoute: WorkspaceSlugIndexRoute,
   WorkspaceSlugEquipmentIdRoute: WorkspaceSlugEquipmentIdRoute,
@@ -392,6 +433,7 @@ const WorkspaceSlugRouteWithChildren = WorkspaceSlugRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
+  QTokenRoute: QTokenRoute,
   WorkspaceSlugRoute: WorkspaceSlugRouteWithChildren,
 }
 export const routeTree = rootRouteImport

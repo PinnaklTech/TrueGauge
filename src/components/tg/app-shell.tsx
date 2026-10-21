@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   User as UserIcon,
+  ScanLine,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -79,18 +80,25 @@ const nav: {
   icon: typeof LayoutDashboard;
   exact?: boolean;
   tour: string;
+  group: "main" | "insights" | "admin";
 }[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true, tour: "nav-dashboard" },
-  { key: "equipment", label: "Equipment", icon: Wrench, tour: "nav-equipment" },
-  { key: "calibrations", label: "Calibrations", icon: CalendarClock, tour: "nav-calibrations" },
-  { key: "certificates", label: "Certificates", icon: FileCheck2, tour: "nav-certificates" },
-  { key: "reports", label: "Reports & Compliance", icon: BarChart3, tour: "nav-reports" },
-  { key: "notifications", label: "Notifications", icon: Bell, tour: "nav-notifications" },
-  { key: "settings", label: "Settings", icon: Settings, tour: "nav-settings" },
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true, tour: "nav-dashboard", group: "main" },
+  { key: "equipment", label: "Equipment", icon: Wrench, tour: "nav-equipment", group: "main" },
+  { key: "calibrations", label: "Calibrations", icon: CalendarClock, tour: "nav-calibrations", group: "main" },
+  { key: "certificates", label: "Certificates", icon: FileCheck2, tour: "nav-certificates", group: "main" },
+  { key: "reports", label: "Reports", icon: BarChart3, tour: "nav-reports", group: "insights" },
+  { key: "notifications", label: "Notifications", icon: Bell, tour: "nav-notifications", group: "insights" },
+  { key: "settings", label: "Settings", icon: Settings, tour: "nav-settings", group: "admin" },
 ];
 
+const NAV_GROUP_LABEL: Record<"main" | "insights" | "admin", string> = {
+  main: "Workspace",
+  insights: "Insights",
+  admin: "Admin",
+};
+
 const iconBtn =
-  "tg-focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted";
+  "tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:h-8 md:w-8 md:rounded-md";
 
 function toUserProfile(u: AuthUser): UserProfile {
   return {
@@ -266,10 +274,6 @@ export function AppShell({
 
   const goTourRoute = async (to: TourRoute) => {
     if (!workspaceSlug) return;
-    if (to === "calibrations") {
-      await navigate({ to: "/workspace/$slug/calibrations", params: { slug: workspaceSlug }, search: {} });
-      return;
-    }
     if (to === "dashboard") {
       await navigate({ to: "/workspace/$slug", params: { slug: workspaceSlug } });
       return;
@@ -278,7 +282,22 @@ export function AppShell({
       await navigate({ to: "/workspace/$slug/equipment", params: { slug: workspaceSlug } });
       return;
     }
-    await navigate({ to: "/workspace/$slug/certificates", params: { slug: workspaceSlug } });
+    if (to === "calibrations") {
+      await navigate({ to: "/workspace/$slug/calibrations", params: { slug: workspaceSlug }, search: {} });
+      return;
+    }
+    if (to === "certificates") {
+      await navigate({ to: "/workspace/$slug/certificates", params: { slug: workspaceSlug } });
+      return;
+    }
+    if (to === "reports") {
+      await navigate({ to: "/workspace/$slug/reports", params: { slug: workspaceSlug } });
+      return;
+    }
+    if (to === "notifications") {
+      await navigate({ to: "/workspace/$slug/notifications", params: { slug: workspaceSlug } });
+      return;
+    }
   };
 
   const needsProfileSetup =
@@ -338,7 +357,9 @@ export function AppShell({
       (target === "dashboard" && /\/workspace\/[^/]+\/?$/.test(pathname)) ||
       (target === "equipment" && pathname.includes("/equipment")) ||
       (target === "calibrations" && pathname.includes("/calibrations")) ||
-      (target === "certificates" && pathname.includes("/certificates"));
+      (target === "certificates" && pathname.includes("/certificates")) ||
+      (target === "reports" && pathname.includes("/reports")) ||
+      (target === "notifications" && pathname.includes("/notifications"));
 
     if (!onTarget && workspaceSlug) {
       sessionStorage.setItem("tg-tour-resume", "1");
@@ -413,53 +434,137 @@ export function AppShell({
         ? [{ label: title }]
         : [];
 
-  const navList = (opts: { collapsed?: boolean; onNavigate?: () => void }) => (
-    <ul className="flex flex-col gap-0.5">
-      {visibleNav.map((item) => {
-        const href = workspaceSlug ? navHref(workspaceSlug, item.key) : "#";
-        const active =
-          item.exact
-            ? pathname === href || pathname === `${href}/`
-            : pathname === href || pathname.startsWith(href + "/");
-        const Icon = item.icon;
-        return (
-          <li key={item.key}>
-            <Link
-              to={href}
-              onClick={opts.onNavigate}
-              data-tour={item.tour}
+  const navList = (opts: {
+    collapsed?: boolean;
+    onNavigate?: () => void;
+    /** Larger touch targets for the mobile drawer */
+    comfortable?: boolean;
+  }) => {
+    const groups = (["main", "insights", "admin"] as const)
+      .map((group) => ({
+        group,
+        items: visibleNav.filter((item) => item.group === group),
+      }))
+      .filter((g) => g.items.length > 0);
+
+    const renderItem = (item: (typeof visibleNav)[number]) => {
+      const href = workspaceSlug ? navHref(workspaceSlug, item.key) : "#";
+      const active = item.exact
+        ? pathname === href || pathname === `${href}/`
+        : pathname === href || pathname.startsWith(href + "/");
+      const Icon = item.icon;
+      return (
+        <li key={item.key}>
+          <Link
+            to={href}
+            onClick={opts.onNavigate}
+            data-tour={item.tour}
+            title={opts.collapsed ? item.label : undefined}
+            className={cn(
+              "tg-focus-ring group relative flex items-center font-medium transition-colors",
+              opts.comfortable
+                ? "min-h-12 gap-3 rounded-xl px-3.5 py-3 text-base"
+                : cn(
+                    "gap-3 rounded-lg px-2.5 py-2 text-[13px] leading-none",
+                    opts.collapsed && "justify-center px-0",
+                  ),
+              active
+                ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px] shadow-primary/15"
+                : "text-sidebar-foreground/75 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+            )}
+          >
+            {active && !opts.collapsed && (
+              <span
+                className={cn(
+                  "absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full bg-primary",
+                  opts.comfortable ? "h-6 w-1" : "h-5 w-1",
+                )}
+              />
+            )}
+            <span
               className={cn(
-                "tg-focus-ring group relative flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
+                "grid shrink-0 place-items-center rounded-md transition-colors",
+                opts.comfortable ? "h-9 w-9" : "h-7 w-7",
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  ? "bg-primary/15 text-primary"
+                  : "bg-transparent text-sidebar-foreground/55 group-hover:text-sidebar-foreground/80",
               )}
             >
-              {active && (
-                <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
-              )}
-              <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
-              {!opts.collapsed && <span className="truncate">{item.label}</span>}
-              {!opts.collapsed && item.key === "notifications" && unread > 0 && (
-                <span className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {unread}
-                </span>
-              )}
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
-  );
+              <Icon
+                className={cn(opts.comfortable ? "h-5 w-5" : "h-4 w-4")}
+                strokeWidth={active ? 2.25 : 2}
+              />
+            </span>
+            {!opts.collapsed && <span className="min-w-0 flex-1 truncate tracking-tight">{item.label}</span>}
+            {!opts.collapsed && item.key === "notifications" && unread > 0 && (
+              <span
+                className={cn(
+                  "ml-auto rounded-full bg-destructive font-semibold text-white tabular-nums",
+                  opts.comfortable
+                    ? "min-w-6 px-2 py-0.5 text-xs"
+                    : "min-w-5 px-1.5 py-0.5 text-[10px]",
+                )}
+              >
+                {unread}
+              </span>
+            )}
+            {opts.collapsed && item.key === "notifications" && unread > 0 && (
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
+            )}
+          </Link>
+        </li>
+      );
+    };
 
-  const sidebarFooter = (opts: { collapsed?: boolean }) => (
-    <div className="space-y-2 border-t border-sidebar-border p-2">
+    return (
+      <div className={cn("flex flex-col", opts.comfortable ? "gap-5" : "gap-4")}>
+        {groups.map(({ group, items }) => (
+          <div key={group} className="flex flex-col gap-1">
+            {!opts.collapsed && (
+              <div
+                className={cn(
+                  "px-2.5 font-semibold uppercase tracking-[0.12em] text-muted-foreground/80",
+                  opts.comfortable ? "mb-1 text-[11px]" : "mb-0.5 text-[10px]",
+                )}
+              >
+                {NAV_GROUP_LABEL[group]}
+              </div>
+            )}
+            {opts.collapsed && group !== "main" && (
+              <div className="mx-auto my-1 h-px w-6 bg-sidebar-border" aria-hidden />
+            )}
+            <ul className={cn("flex flex-col", opts.comfortable ? "gap-1.5" : "gap-1")}>
+              {items.map(renderItem)}
+            </ul>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const sidebarFooter = (opts: { collapsed?: boolean; comfortable?: boolean }) => (
+    <div
+      className={cn(
+        "space-y-2 border-t border-sidebar-border",
+        opts.comfortable ? "p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" : "p-2",
+      )}
+    >
       {!opts.collapsed && (
-        <div className="rounded-lg border border-sidebar-border bg-surface-2/40 p-3">
+        <div
+          className={cn(
+            "rounded-lg border border-sidebar-border bg-surface-2/40",
+            opts.comfortable ? "p-3.5" : "p-3",
+          )}
+        >
           <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             ISO 9001 / 17025
           </div>
-          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+          <p
+            className={cn(
+              "mt-1 leading-snug text-muted-foreground",
+              opts.comfortable ? "text-xs" : "text-[11px]",
+            )}
+          >
             Audit readiness is currently {readiness}%.
           </p>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -477,11 +582,18 @@ export function AppShell({
         onClick={toggle}
         aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         className={cn(
-          "tg-focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+          "tg-focus-ring flex w-full items-center gap-2 text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+          opts.comfortable
+            ? "min-h-12 rounded-xl px-3.5 py-3 text-base"
+            : "rounded-md px-2 py-1.5 text-sm",
           opts.collapsed && "justify-center",
         )}
       >
-        {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        {theme === "dark" ? (
+          <Sun className={opts.comfortable ? "h-5 w-5" : "h-4 w-4"} />
+        ) : (
+          <Moon className={opts.comfortable ? "h-5 w-5" : "h-4 w-4"} />
+        )}
         {!opts.collapsed && <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
       </button>
 
@@ -491,18 +603,47 @@ export function AppShell({
             type="button"
             aria-label="Account menu"
             data-tour="account-menu"
-            className="tg-focus-ring flex w-full items-center gap-2 rounded-md p-1.5 text-left hover:bg-sidebar-accent/60"
+            className={cn(
+              "tg-focus-ring flex w-full items-center gap-2 text-left hover:bg-sidebar-accent/60",
+              opts.comfortable ? "min-h-14 rounded-xl p-2.5" : "rounded-md p-1.5",
+            )}
           >
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
+            <div
+              className={cn(
+                "grid shrink-0 place-items-center rounded-full bg-primary/20 font-semibold text-primary",
+                opts.comfortable ? "h-11 w-11 text-sm" : "h-8 w-8 text-xs",
+              )}
+            >
               {initials}
             </div>
             {!opts.collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
-                <div className="truncate text-[11px] text-muted-foreground">{displayRole}</div>
+                <div
+                  className={cn(
+                    "truncate font-medium text-sidebar-foreground",
+                    opts.comfortable ? "text-base" : "text-sm",
+                  )}
+                >
+                  {displayName}
+                </div>
+                <div
+                  className={cn(
+                    "truncate text-muted-foreground",
+                    opts.comfortable ? "text-xs" : "text-[11px]",
+                  )}
+                >
+                  {displayRole}
+                </div>
               </div>
             )}
-            {!opts.collapsed && <LogOut className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+            {!opts.collapsed && (
+              <LogOut
+                className={cn(
+                  "shrink-0 text-muted-foreground",
+                  opts.comfortable ? "h-4 w-4" : "h-3.5 w-3.5",
+                )}
+              />
+            )}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" side="top" className="w-56">
@@ -547,7 +688,7 @@ export function AppShell({
         data-tour="nav-sidebar"
         className={cn(
           "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 md:flex",
-          collapsed ? "w-[68px] cursor-pointer" : "w-[240px]",
+          collapsed ? "w-[72px] cursor-pointer" : "w-[252px]",
         )}
         title={collapsed ? "Click empty space to expand sidebar" : undefined}
         onClick={(e) => {
@@ -558,11 +699,16 @@ export function AppShell({
           setCollapsed(false);
         }}
       >
-        <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-3">
+        <div
+          className={cn(
+            "flex h-14 items-center gap-2.5 border-b border-sidebar-border",
+            collapsed ? "justify-center px-2" : "px-3.5",
+          )}
+        >
           <Link
             to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
             aria-label="Go to dashboard"
-            className="tg-focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-sm"
+            className="tg-focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm"
           >
             <Gauge className="h-4 w-4" strokeWidth={2.25} />
           </Link>
@@ -570,38 +716,59 @@ export function AppShell({
             <Link
               to={workspaceSlug ? workspacePath(workspaceSlug) : "/auth/login"}
               aria-label={`Workspace ${orgName} — Dashboard`}
-              className="tg-focus-ring group flex min-w-0 flex-1 items-center rounded-md px-1.5 py-1 text-left hover:bg-sidebar-accent/60"
+              className="tg-focus-ring group min-w-0 flex-1 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent/50"
             >
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  Workspace
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  TrueGage
                 </div>
-                <div className="truncate text-sm font-semibold text-sidebar-foreground">{orgName}</div>
+                <div className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
+                  {orgName}
+                </div>
               </div>
             </Link>
           )}
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+              className="tg-focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
-        <nav className="tg-scrollbar flex-1 overflow-y-auto px-2 py-3" aria-label="Main">
+        <nav
+          className={cn(
+            "tg-scrollbar flex-1 overflow-y-auto py-4",
+            collapsed ? "px-2" : "px-2.5",
+          )}
+          aria-label="Main"
+        >
           {navList({ collapsed })}
         </nav>
 
-        <div className="space-y-2 border-t border-sidebar-border p-2">
+        <div className={cn("space-y-2 border-t border-sidebar-border", collapsed ? "p-2" : "p-2.5")}>
           {!collapsed && (
-            <div className="rounded-lg border border-sidebar-border bg-surface-2/40 p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                ISO 9001 / 17025
+            <div className="rounded-xl border border-sidebar-border/80 bg-linear-to-br from-primary/10 to-transparent p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Audit readiness
+                </div>
+                <div className="text-xs font-semibold tabular-nums text-primary">{readiness}%</div>
               </div>
-              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                Audit readiness is currently {readiness}%.
-              </p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted/80">
                 <div
                   className="h-full rounded-full bg-primary transition-all"
                   style={{ width: `${readiness}%` }}
                 />
               </div>
-              <div className="mt-1 text-right text-[11px] font-semibold text-primary">{readiness}%</div>
+              <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                ISO 9001 / 17025 · live compliance
+              </p>
             </div>
           )}
 
@@ -610,12 +777,12 @@ export function AppShell({
             onClick={toggle}
             aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             className={cn(
-              "tg-focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
-              collapsed && "justify-center",
+              "tg-focus-ring flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+              collapsed && "justify-center px-0",
             )}
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            {!collapsed && <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>}
+            {theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
+            {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
           </button>
 
           <DropdownMenu>
@@ -624,14 +791,19 @@ export function AppShell({
                 type="button"
                 aria-label="Account menu"
                 data-tour="account-menu"
-                className="tg-focus-ring flex w-full items-center gap-2 rounded-md p-1.5 text-left hover:bg-sidebar-accent/60"
+                className={cn(
+                  "tg-focus-ring flex w-full items-center gap-2.5 rounded-lg border border-transparent p-1.5 text-left transition-colors hover:border-sidebar-border hover:bg-sidebar-accent/50",
+                  collapsed && "justify-center",
+                )}
               >
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary ring-1 ring-primary/20">
                   {initials}
                 </div>
                 {!collapsed && (
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-sidebar-foreground">{displayName}</div>
+                    <div className="truncate text-sm font-medium tracking-tight text-sidebar-foreground">
+                      {displayName}
+                    </div>
                     <div className="truncate text-[11px] text-muted-foreground">{displayRole}</div>
                   </div>
                 )}
@@ -671,61 +843,77 @@ export function AppShell({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <button
-            type="button"
-            onClick={() => setCollapsed((v) => !v)}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!collapsed}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={cn(
-              "tg-focus-ring group hidden w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground md:flex",
-              collapsed ? "justify-center" : "justify-start",
-            )}
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
-            ) : (
-              <>
-                <PanelLeftClose className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-0.5" />
-                <span>Collapse</span>
-              </>
-            )}
-          </button>
+          {collapsed && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              aria-label="Expand sidebar"
+              aria-expanded={false}
+              title="Expand sidebar"
+              className="tg-focus-ring group mx-auto grid h-8 w-8 place-items-center rounded-md text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+            >
+              <PanelLeftOpen className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
+          )}
         </div>
       </aside>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-[280px] bg-sidebar p-0 text-sidebar-foreground">
-          <SheetHeader className="border-b border-sidebar-border px-4 py-3 text-left">
-            <SheetTitle className="flex items-center gap-2 text-sidebar-foreground">
-              <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
-                <Gauge className="h-4 w-4" />
+        <SheetContent
+          side="left"
+          className="flex w-[min(100vw-1.25rem,22rem)] max-w-none flex-col gap-0 bg-sidebar p-0 text-sidebar-foreground sm:max-w-none"
+        >
+          <SheetHeader className="space-y-0 border-b border-sidebar-border px-4 py-4 pr-12 text-left">
+            <SheetTitle className="flex items-center gap-3 text-sidebar-foreground">
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                <Gauge className="h-5 w-5" strokeWidth={2.25} />
               </span>
-              <span>
-                <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Workspace
                 </span>
-                {orgName}
+                <span className="block truncate text-lg font-semibold leading-tight">{orgName}</span>
               </span>
             </SheetTitle>
           </SheetHeader>
-          <nav className="tg-scrollbar flex-1 overflow-y-auto px-2 py-3" aria-label="Mobile">
-            {navList({ onNavigate: () => setMobileOpen(false) })}
+          <nav
+            className="tg-scrollbar flex-1 overflow-y-auto px-3 py-4"
+            aria-label="Mobile"
+          >
+            {navList({
+              onNavigate: () => setMobileOpen(false),
+              comfortable: true,
+            })}
           </nav>
-          <div className="mt-auto">{sidebarFooter({ collapsed: false })}</div>
+          <div className="mt-auto shrink-0">
+            {sidebarFooter({ collapsed: false, comfortable: true })}
+          </div>
         </SheetContent>
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md md:gap-3 md:px-6">
+        <header className="sticky top-0 z-20 flex min-h-16 items-center gap-2 border-b border-border bg-background/90 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-md md:h-14 md:min-h-14 md:gap-3 md:px-6 md:pt-0">
           <button
             type="button"
-            className={cn(iconBtn, "md:hidden")}
+            className={cn(
+              "tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary shadow-xs",
+              "hover:bg-primary/15 hover:border-primary/60 active:bg-primary/20 md:hidden",
+            )}
             aria-label="Open navigation menu"
             onClick={() => setMobileOpen(true)}
           >
-            <Menu className="h-4 w-4" />
+            <Menu className="h-5 w-5" />
           </button>
+
+          {/* Mobile page context */}
+          <div className="min-w-0 flex-1 md:hidden">
+            <p className="truncate text-sm font-semibold leading-tight text-foreground">
+              {crumbTrail[crumbTrail.length - 1]?.label || orgName || "TrueGage"}
+            </p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {orgName && crumbTrail.length > 0 ? orgName : "TrueGage"}
+            </p>
+          </div>
 
           <nav className="hidden min-w-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
             <Link
@@ -748,7 +936,7 @@ export function AppShell({
             ))}
           </nav>
 
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-1 md:justify-center">
+          <div className="flex shrink-0 items-center justify-end gap-1.5 md:min-w-0 md:flex-1 md:justify-center">
             <GlobalSearch
               workspaceSlug={workspaceSlug}
               storageEnabled={Boolean(me?.storage_enabled)}
@@ -756,14 +944,32 @@ export function AppShell({
             />
           </div>
 
+          {workspaceSlug && !pathname.includes("/scan") ? (
+            <Link
+              to="/workspace/$slug/scan"
+              params={{ slug: workspaceSlug }}
+              className={cn(
+                "tg-focus-ring hidden shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-card",
+                "px-3 text-xs font-medium text-foreground shadow-xs",
+                "hover:border-primary/40 hover:bg-primary/5 hover:text-primary",
+                "sm:inline-flex sm:h-8",
+              )}
+              aria-label="Scan equipment"
+              data-tour="nav-scan"
+            >
+              <ScanLine className="h-3.5 w-3.5 shrink-0" />
+              <span>Scan</span>
+            </Link>
+          ) : null}
+
           <Link
             to={workspaceSlug ? workspacePath(workspaceSlug, "notifications") : "/auth/login"}
             className={cn(iconBtn, "relative")}
             aria-label="Notifications"
           >
-            <Bell className="h-4 w-4" />
+            <Bell className="h-5 w-5 md:h-4 md:w-4" />
             {unread > 0 && (
-              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-destructive ring-2 ring-background" />
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive ring-2 ring-background md:right-1 md:top-1 md:h-1.5 md:w-1.5" />
             )}
           </Link>
         </header>
@@ -798,6 +1004,21 @@ export function AppShell({
         )}
 
         <main className="tg-page-enter flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+
+        {/* Hide FAB on scan + equipment detail (detail has its own shop-floor action bar) */}
+        {workspaceSlug &&
+        !pathname.includes("/scan") &&
+        !/\/equipment\/[^/]+$/.test(pathname) ? (
+          <Link
+            to="/workspace/$slug/scan"
+            params={{ slug: workspaceSlug }}
+            className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background transition hover:bg-primary/90 md:hidden"
+            aria-label="Scan equipment"
+            data-tour="nav-scan-fab"
+          >
+            <ScanLine className="h-6 w-6" />
+          </Link>
+        ) : null}
       </div>
 
       {me && needsProfileSetup ? (

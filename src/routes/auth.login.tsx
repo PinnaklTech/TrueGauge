@@ -14,6 +14,7 @@ import {
   type AuthSession,
 } from "@/lib/api";
 import { setSessionTokens } from "@/lib/auth";
+import { isSafeReturnTo, sanitizeReturnTo } from "@/lib/return-to";
 import {
   endWorkspaceBoot,
   queueWelcomeToast,
@@ -27,6 +28,11 @@ import { LoginAtmosphere } from "@/components/tg/login-enter-transition";
 
 export const Route = createFileRoute("/auth/login")({
   head: () => ({ meta: [{ title: "Sign in · TrueGage" }] }),
+  validateSearch: (search: Record<string, unknown>): { returnTo?: string } => {
+    const raw = search.returnTo;
+    if (isSafeReturnTo(raw)) return { returnTo: raw.trim() };
+    return {};
+  },
   component: LoginPage,
 });
 
@@ -85,6 +91,7 @@ async function warmWorkspaceCache(queryClient: QueryClient, session: AuthSession
 function LoginPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { returnTo } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -99,6 +106,7 @@ function LoginPage() {
       setWorkspaceBootMessage("Loading your workspace…");
 
       const welcome = `Welcome back${session.user.full_name ? `, ${session.user.full_name}` : ""}`;
+      const safeReturn = sanitizeReturnTo(returnTo, "");
 
       if (session.tenant_slug) {
         try {
@@ -107,6 +115,11 @@ function LoginPage() {
           // AppShell will fetch; boot overlay stays until shell is ready.
         }
         queueWelcomeToast(welcome);
+        if (safeReturn) {
+          endWorkspaceBoot();
+          window.location.replace(safeReturn);
+          return;
+        }
         await navigate({
           to: "/workspace/$slug",
           params: { slug: session.tenant_slug },
@@ -117,6 +130,10 @@ function LoginPage() {
 
       endWorkspaceBoot();
       toast.success(welcome);
+      if (safeReturn) {
+        window.location.replace(safeReturn);
+        return;
+      }
       await navigate({ to: "/", replace: true });
     } catch (err) {
       endWorkspaceBoot();

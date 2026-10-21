@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -121,6 +122,19 @@ class AppSettings(Base):
     address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     accent_color: Mapped[str] = mapped_column(String(32), default="#0f766e", server_default="#0f766e")
+    # Regional display (org-wide)
+    date_format: Mapped[str] = mapped_column(String(32), default="DD MMM YYYY", server_default="DD MMM YYYY")
+    time_format: Mapped[str] = mapped_column(String(8), default="12h", server_default="12h")
+    week_start: Mapped[str] = mapped_column(String(16), default="monday", server_default="monday")
+    reminder_skip_weekends: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    allow_user_display_override: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    allow_user_channel_toggle: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
+    )
     # JSON: {"departments":[...],"categories":[...],"locations":[...]}
     taxonomy_json: Mapped[str] = mapped_column(
         Text,
@@ -135,7 +149,7 @@ class AppSettings(Base):
     remind_1d: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     remind_overdue_daily: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     remind_weekly_digest: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    reminder_hour_local: Mapped[int] = mapped_column(Integer, default=8, server_default="8")
+    reminder_hour_local: Mapped[int] = mapped_column(Integer, default=9, server_default="9")
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -160,6 +174,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(64), default="admin", server_default="admin")
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     locale: Mapped[str] = mapped_column(String(32), default="en-US", server_default="en-US")
+    timezone_override: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    date_format_override: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    time_format_override: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notify_in_app: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
@@ -211,6 +228,9 @@ class EquipmentCache(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     public_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, default=new_public_id)
+    # Opaque label token (Crockford base32, 10 chars). Globally unique — URL is /q/{token}.
+    qr_token: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    qr_token_regenerated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     odoo_id: Mapped[Optional[int]] = mapped_column(Integer, index=True, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="local", server_default="local", index=True)
     tag: Mapped[str] = mapped_column(String(128), default="", index=True)
@@ -483,4 +503,32 @@ class ReminderDispatch(Base):
     equipment_public_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GeneratedReport(Base):
+    """Last few generated PDF reports stored in-DB (not object storage)."""
+
+    __tablename__ = "generated_reports"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "report_id", name="uq_generated_reports_tenant_report_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    report_id: Mapped[str] = mapped_column(String(64), index=True)
+    report_type: Mapped[str] = mapped_column(String(32), default="compliance", server_default="compliance")
+    filename: Mapped[str] = mapped_column(String(128), default="")
+    generated_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    generated_by_name: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    generated_by_role: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    row_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    meta_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
 

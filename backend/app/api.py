@@ -1,8 +1,9 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.accounts import (
@@ -28,6 +29,7 @@ from app.models import (
 )
 from app.security import client_safe_error, decrypt_secret, encrypt_secret
 from app.ssrf import validate_public_https_url, validate_smtp_host
+from app.rate_limit import scan_resolve_limiter
 from app.schemas import (
     AuditEventListOut,
     AuditEventOut,
@@ -38,6 +40,10 @@ from app.schemas import (
     CertificateOut,
     CertificateViewUrlOut,
     EquipmentCreate,
+    EquipmentImportResult,
+    EquipmentImportRowError,
+    EquipmentLabelOut,
+    EquipmentLabelsOut,
     EquipmentListOut,
     EquipmentOut,
     EquipmentUpdate,
@@ -46,12 +52,17 @@ from app.schemas import (
     EmailTestRecipientResult,
     EmailTestSendIn,
     EmailTestSendOut,
+    GeneratedReportListOut,
+    GeneratedReportOut,
+    LabelPrintedIn,
     OverdueAlertSendIn,
     OverdueAlertSendOut,
     HealthOut,
     OdooConnectionStatus,
     OdooCredentialsIn,
     OdooTestResult,
+    ScanResolveMatchOut,
+    ScanResolveOut,
     SyncResult,
     TeamMemberCreate,
     TeamMemberListOut,
@@ -59,7 +70,14 @@ from app.schemas import (
     TeamMemberUpdate,
 )
 from app.services.audit import record_audit_event
-from app.services.reports import ReportFormat, ReportType, make_report
+from app.services.qr_token import allocate_qr_token, is_valid_qr_token
+from app.services.reports import (
+    ReportExtras,
+    ReportFormat,
+    ReportType,
+    load_report_extras,
+    make_report,
+)
 from app.services.email_service import (
     EmailError,
     OverdueEquipmentRow,
@@ -67,6 +85,11 @@ from app.services.email_service import (
     send_overdue_alert_email,
     send_test_email,
     smtp_configured,
+)
+from app.services.equipment_bulk import (
+    build_export_csv,
+    build_template_csv,
+    run_import,
 )
 from app.services.equipment_sync import (
     compute_status,
@@ -146,7 +169,51 @@ def equipment_to_out(row: EquipmentCache) -> EquipmentOut:
         frequency_days=row.frequency_days,
         owner=row.owner,
         responsible_email=row.responsible_email,
+        qr_token=row.qr_token,
     )
+
+
+def _scan_match_out(row: EquipmentCache) -> ScanResolveMatchOut:
+    return ScanResolveMatchOut(
+        id=row.public_id,
+        name=row.name,
+        tag=row.tag,
+        status=row.status,  # type: ignore[arg-type]
+        serial=row.serial or "",
+    )
+
+
+def _allowed_qr_hosts() -> set[str]:
+    settings = get_settings()
+    hosts: set[str] = set()
+    for raw in (settings.app_public_url, "http://localhost:8080", "http://127.0.0.1:8080"):
+        try:
+            parsed = urlparse((raw or "").strip())
+            if parsed.hostname:
+                hosts.add(parsed.hostname.lower())
+        except Exception:
+            continue
+    return hosts
+
+
+def _extract_qr_token_from_code(code: str) -> Optional[str]:
+    """Return token if code is a /q/{token} URL on an allowed host, or a bare 10-char token."""
+    trimmed = code.strip()
+    if is_valid_qr_token(trimmed.lower()):
+        return trimmed.lower()
+    try:
+        parsed = urlparse(trimmed)
+    except Exception:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.path:
+        return None
+    host = (parsed.hostname or "").lower()
+    if host not in _allowed_qr_hosts():
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) == 2 and parts[0].lower() == "q" and is_valid_qr_token(parts[1].lower()):
+        return parts[1].lower()
+    return None
 
 
 def find_equipment(db: Session, equipment_id: str, tenant_id: int) -> EquipmentCache:
@@ -359,6 +426,7 @@ def create_equipment(
     row = EquipmentCache(
         tenant_id=ctx.tenant_id,
         public_id=new_public_id(),
+        qr_token=allocate_qr_token(db, model_cls=EquipmentCache, column_attr=EquipmentCache.qr_token),
         odoo_id=None,
         source="local",
         tag=tag,
@@ -392,6 +460,201 @@ def create_equipment(
     db.commit()
     db.refresh(row)
     return equipment_to_out(row)
+
+
+@router.get("/equipment/import/template.csv")
+def download_equipment_import_template(
+    ctx: TenantContext = Depends(require_writer),
+) -> Response:
+    """Download a CSV template with example rows for bulk equipment import."""
+    content = build_template_csv()
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="truegage-equipment-template.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/equipment/export.csv")
+def export_equipment_csv(
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> Response:
+    """Export the current workspace equipment register as CSV."""
+    rows = (
+        db.query(EquipmentCache)
+        .filter(EquipmentCache.tenant_id == ctx.tenant_id)
+        .order_by(EquipmentCache.name.asc())
+        .all()
+    )
+    content = build_export_csv(rows)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="equipment.exported",
+        target_type="equipment",
+        target_id=None,
+        target_name="equipment export",
+        detail=f"{len(rows)} row(s)",
+    )
+    db.commit()
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="truegage-equipment-export.csv"',
+            "Cache-Control": "no-store",
+            "X-Export-Rows": str(len(rows)),
+        },
+    )
+
+
+@router.post("/equipment/import", response_model=EquipmentImportResult)
+async def import_equipment_bulk(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> EquipmentImportResult:
+    """Create-only bulk import from CSV or XLSX. Existing tags are skipped."""
+    filename = file.filename or "upload.csv"
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5 MB)")
+
+    result = run_import(db, tenant_id=ctx.tenant_id, filename=filename, content=raw)
+
+    if result.created > 0:
+        # Merge free-text taxonomy terms from equipment into org registers
+        from app.accounts import (
+            _normalize_taxonomy_terms,
+            apply_taxonomy,
+            get_or_create_settings,
+            parse_taxonomy,
+            seed_taxonomy_from_equipment,
+        )
+        from app.schemas import OrgTaxonomyIn
+
+        settings_row = get_or_create_settings(db, ctx.tenant_id)
+        current = parse_taxonomy(settings_row)
+        seeded = seed_taxonomy_from_equipment(db, ctx.tenant_id)
+        apply_taxonomy(
+            settings_row,
+            OrgTaxonomyIn(
+                departments=_normalize_taxonomy_terms(
+                    [*current.departments, *seeded.departments]
+                ),
+                categories=_normalize_taxonomy_terms(
+                    [*current.categories, *seeded.categories]
+                ),
+                locations=_normalize_taxonomy_terms([*current.locations, *seeded.locations]),
+            ),
+        )
+        record_audit_event(
+            db,
+            tenant_id=ctx.tenant_id,
+            user=ctx.user,
+            action="equipment.bulk_import",
+            target_type="equipment",
+            target_id=None,
+            target_name="bulk import",
+            detail=(
+                f"created={result.created} skipped={result.skipped} failed={result.failed} "
+                f"file={filename}"
+            ),
+        )
+        db.commit()
+    elif result.errors:
+        db.rollback()
+
+    return EquipmentImportResult(
+        created=result.created,
+        skipped=result.skipped,
+        failed=result.failed,
+        errors=[
+            EquipmentImportRowError(row=e.row, field=e.field, message=e.message)
+            for e in result.errors[:200]
+        ],
+    )
+
+
+@router.get("/equipment/labels", response_model=EquipmentLabelsOut)
+def get_equipment_labels(
+    ids: str = Query(..., description="Comma-separated equipment public ids"),
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> EquipmentLabelsOut:
+    id_list = [x.strip() for x in ids.split(",") if x.strip()]
+    if not id_list:
+        raise HTTPException(status_code=400, detail="No equipment ids provided")
+    if len(id_list) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 equipment ids per request")
+
+    rows = (
+        db.query(EquipmentCache)
+        .filter(
+            EquipmentCache.tenant_id == ctx.tenant_id,
+            EquipmentCache.public_id.in_(id_list),
+        )
+        .all()
+    )
+    by_id = {r.public_id: r for r in rows}
+    ordered = [by_id[i] for i in id_list if i in by_id]
+
+    settings_row = get_or_create_settings(db, ctx.tenant_id)
+    tenant = db.get(Tenant, ctx.tenant_id)
+    org_name = (settings_row.company_name or "").strip() or (tenant.name if tenant else "") or "TrueGage"
+
+    return EquipmentLabelsOut(
+        items=[
+            EquipmentLabelOut(
+                id=r.public_id,
+                name=r.name,
+                tag=r.tag,
+                serial=r.serial or "",
+                qr_token=r.qr_token,
+                org_name=org_name,
+                department=r.department or "",
+                location=r.location or "",
+            )
+            for r in ordered
+        ]
+    )
+
+
+@router.post("/equipment/labels/printed", status_code=204)
+def audit_labels_printed(
+    body: LabelPrintedIn,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_writer),
+) -> Response:
+    ids = [i.strip() for i in body.ids if i.strip()][:500]
+    count = body.count if body.count is not None else len(ids)
+    detail = f"Printed {count} label(s)"
+    if body.preset:
+        detail += f" ({body.preset})"
+    if ids:
+        shown = ",".join(ids[:20])
+        if len(ids) > 20:
+            shown += f"…(+{len(ids) - 20})"
+        detail += f": {shown}"
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="label_printed",
+        target_type="equipment",
+        target_id=ids[0] if len(ids) == 1 else None,
+        target_name=f"{count} labels",
+        detail=detail[:512],
+    )
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/equipment/{equipment_id}", response_model=EquipmentOut)
@@ -469,6 +732,105 @@ def delete_equipment(
     db.delete(row)
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/scan/resolve", response_model=ScanResolveOut)
+def scan_resolve(
+    code: str = Query(..., min_length=1, max_length=512),
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> ScanResolveOut:
+    """Resolve a scanned QR URL, bare token, or legacy tag/serial to equipment in this tenant."""
+    raw = (code or "").strip()
+    if not raw or len(raw) > 512:
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    rate_key = f"scan:{ctx.user.id}:{ctx.tenant_id}"
+    if not scan_resolve_limiter.hit(rate_key, limit=60, window_seconds=60.0):
+        raise HTTPException(status_code=429, detail="Too many scan requests. Try again shortly.")
+
+    not_found = HTTPException(status_code=404, detail="not_found")
+
+    token = _extract_qr_token_from_code(raw)
+    if token:
+        row = (
+            db.query(EquipmentCache)
+            .filter(
+                EquipmentCache.qr_token == token,
+                EquipmentCache.tenant_id == ctx.tenant_id,
+            )
+            .one_or_none()
+        )
+        if row is None:
+            raise not_found
+        if refresh_equipment_status(row):
+            db.commit()
+            db.refresh(row)
+        return ScanResolveOut(equipment=_scan_match_out(row), match_type="token")
+
+    # Legacy barcode: exact tag (case-insensitive), then serial
+    needle = raw.lower()
+    tag_matches = (
+        db.query(EquipmentCache)
+        .filter(
+            EquipmentCache.tenant_id == ctx.tenant_id,
+            func.lower(EquipmentCache.tag) == needle,
+        )
+        .all()
+    )
+    if len(tag_matches) == 1:
+        row = tag_matches[0]
+        if refresh_equipment_status(row):
+            db.commit()
+            db.refresh(row)
+        return ScanResolveOut(equipment=_scan_match_out(row), match_type="tag")
+    if len(tag_matches) > 1:
+        return ScanResolveOut(matches=[_scan_match_out(r) for r in tag_matches], match_type="tag")
+
+    serial_matches = (
+        db.query(EquipmentCache)
+        .filter(
+            EquipmentCache.tenant_id == ctx.tenant_id,
+            EquipmentCache.serial != "",
+            func.lower(EquipmentCache.serial) == needle,
+        )
+        .all()
+    )
+    if len(serial_matches) == 1:
+        row = serial_matches[0]
+        if refresh_equipment_status(row):
+            db.commit()
+            db.refresh(row)
+        return ScanResolveOut(equipment=_scan_match_out(row), match_type="serial")
+    if len(serial_matches) > 1:
+        return ScanResolveOut(matches=[_scan_match_out(r) for r in serial_matches], match_type="serial")
+
+    raise not_found
+
+
+@router.post("/equipment/{equipment_id}/qr-token/regenerate", response_model=EquipmentOut)
+def regenerate_equipment_qr_token(
+    equipment_id: str,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_admin),
+) -> EquipmentOut:
+    row = find_equipment(db, equipment_id, ctx.tenant_id)
+    old = row.qr_token
+    row.qr_token = allocate_qr_token(db, model_cls=EquipmentCache, column_attr=EquipmentCache.qr_token)
+    row.qr_token_regenerated_at = datetime.now(timezone.utc)
+    record_audit_event(
+        db,
+        tenant_id=ctx.tenant_id,
+        user=ctx.user,
+        action="qr_token_regenerated",
+        target_type="equipment",
+        target_id=row.public_id,
+        target_name=row.name or row.tag or row.public_id,
+        detail=f"Previous token …{old[-4:] if old else ''}",
+    )
+    db.commit()
+    db.refresh(row)
+    return equipment_to_out(row)
 
 
 def calibration_to_out(row: CalibrationRecord) -> CalibrationOut:
@@ -1370,13 +1732,57 @@ def download_report(
         .order_by(EquipmentCache.name.asc())
         .all()
     )
+    from app.services.org_settings import local_today, resolve_effective_settings
+
+    settings_row = get_or_create_settings(db, ctx.tenant_id)
+    eff = resolve_effective_settings(settings_row, ctx.user)
+    tz_name, date_fmt, time_fmt = eff.timezone, eff.date_format, eff.time_format
+    today = local_today(tz_name)
+
+    extras = ReportExtras(
+        generated_by_name=(ctx.user.full_name or "").strip() or (ctx.user.email or "User"),
+        generated_by_role=ctx.user.role or "member",
+        tenant_id=ctx.tenant_id,
+    )
+    if fmt == "pdf":
+        loaded = load_report_extras(db, ctx.tenant_id, today=today)
+        extras.certificate_equipment_ids = loaded.certificate_equipment_ids
+        extras.calibration_dates = loaded.calibration_dates
+
     bundle = make_report(
         tenant_name=tenant.name or tenant.slug,
         tenant_slug=tenant.slug,
         report_type=report_type,
         fmt=fmt,
         rows=rows,
+        timezone_name=tz_name,
+        date_format=date_fmt,
+        time_format=time_fmt,
+        extras=extras,
+        db=db,
+        tenant_id=ctx.tenant_id,
     )
+
+    if fmt == "pdf":
+        from app.services.report_history import save_generated_report
+
+        save_generated_report(
+            db,
+            tenant_id=ctx.tenant_id,
+            report_id=bundle.report_id,
+            report_type=report_type,
+            filename=bundle.filename,
+            content=bundle.content,
+            row_count=bundle.row_count,
+            generated_by_user_id=ctx.user.id,
+            generated_by_name=extras.generated_by_name,
+            generated_by_role=extras.generated_by_role,
+            meta={
+                "org_name": tenant.name or tenant.slug,
+                "label": bundle.label,
+            },
+        )
+
     record_audit_event(
         db,
         tenant_id=ctx.tenant_id,
@@ -1385,7 +1791,7 @@ def download_report(
         target_type="report",
         target_id=report_type,
         target_name=bundle.label,
-        detail=f"{fmt.upper()} · {bundle.row_count} row(s)",
+        detail=f"{fmt.upper()} · {bundle.row_count} row(s) · {bundle.report_id}",
     )
     db.commit()
 
@@ -1397,5 +1803,55 @@ def download_report(
             "Content-Disposition": f'attachment; filename="{safe_name}"',
             "Cache-Control": "no-store",
             "X-Report-Rows": str(bundle.row_count),
+            "X-Report-Id": bundle.report_id,
+        },
+    )
+
+
+@router.get("/reports/history", response_model=GeneratedReportListOut)
+def list_report_history(
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> GeneratedReportListOut:
+    from app.services.report_history import list_reports
+
+    rows = list_reports(db, tenant_id=ctx.tenant_id)
+    return GeneratedReportListOut(
+        items=[
+            GeneratedReportOut(
+                id=r.id,
+                report_id=r.report_id,
+                report_type=r.report_type,
+                filename=r.filename or f"{r.report_id}.pdf",
+                generated_by_name=r.generated_by_name,
+                generated_by_role=r.generated_by_role,
+                row_count=r.row_count,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+    )
+
+
+@router.get("/reports/history/{report_pk}/download")
+def download_stored_report(
+    report_pk: int,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> Response:
+    from app.services.report_history import get_report
+
+    row = get_report(db, tenant_id=ctx.tenant_id, report_pk=report_pk)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    safe_name = (row.filename or f"{row.report_id}.pdf").replace('"', "")
+    return Response(
+        content=bytes(row.content),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Cache-Control": "no-store",
+            "X-Report-Rows": str(row.row_count),
+            "X-Report-Id": row.report_id,
         },
     )

@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 from typing import Any, Optional
@@ -16,6 +17,28 @@ from cryptography.fernet import Fernet
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# New / changed account passwords (login still accepts legacy longer passwords).
+PASSWORD_MIN_LEN = 6
+PASSWORD_MAX_LEN = 16
+_PASSWORD_SPECIAL_RE = re.compile(r"[^A-Za-z0-9]")
+
+
+def validate_new_password(password: str, *, label: str = "Password") -> str:
+    """Require 6–16 characters with at least one special (non-alphanumeric) character.
+
+    Apply only when *setting* or *changing* a password. Sign-in (`LoginIn` /
+    `StaffLoginIn`) still accepts existing hashes of any prior length/shape so
+    production users are not locked out until they choose a new password.
+    """
+    pw = password or ""
+    if len(pw) < PASSWORD_MIN_LEN:
+        raise ValueError(f"{label} must be at least {PASSWORD_MIN_LEN} characters")
+    if len(pw) > PASSWORD_MAX_LEN:
+        raise ValueError(f"{label} must be at most {PASSWORD_MAX_LEN} characters")
+    if not _PASSWORD_SPECIAL_RE.search(pw):
+        raise ValueError(f"{label} must include at least one special character")
+    return pw
 
 # Legacy PBKDF2 (upgraded on successful login)
 LEGACY_PBKDF2_ITERATIONS = 120_000

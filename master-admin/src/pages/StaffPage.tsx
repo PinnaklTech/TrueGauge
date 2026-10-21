@@ -1,6 +1,12 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createStaff, listStaff, type PlatformUser, updateStaff } from "@/lib/api";
+import {
+  PASSWORD_MAX_LEN,
+  PASSWORD_MIN_LEN,
+  PASSWORD_POLICY_HINT,
+  passwordPolicyError,
+} from "@/lib/password-policy";
 
 export function StaffPage() {
   const queryClient = useQueryClient();
@@ -42,7 +48,9 @@ export function StaffPage() {
     mutationFn: () =>
       updateStaff(editUser!.id, {
         full_name: editName.trim(),
-        ...(editPassword.length >= 12 ? { password: editPassword } : {}),
+        ...(editPassword.trim() && !passwordPolicyError(editPassword)
+          ? { password: editPassword }
+          : {}),
       }),
     onSuccess: async () => {
       setEditUser(null);
@@ -55,9 +63,16 @@ export function StaffPage() {
 
   const onCreate = (e: FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || password.length < 12) {
-      setFormError("Email and password (min 12) are required");
+    if (!email.trim()) {
+      setFormError("Email and password are required");
       return;
+    }
+    {
+      const pwErr = passwordPolicyError(password);
+      if (pwErr) {
+        setFormError(pwErr);
+        return;
+      }
     }
     createMut.mutate({
       email: email.trim(),
@@ -167,13 +182,15 @@ export function StaffPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="st-pw">Password (min 12)</label>
+              <label htmlFor="st-pw">Password ({PASSWORD_POLICY_HINT})</label>
               <input
                 id="st-pw"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 required
+                minLength={PASSWORD_MIN_LEN}
+                maxLength={PASSWORD_MAX_LEN}
               />
             </div>
             <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -195,9 +212,12 @@ export function StaffPage() {
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
-              if (editPassword && editPassword.length < 12) {
-                setFormError("Password must be at least 12 characters");
-                return;
+              if (editPassword) {
+                const pwErr = passwordPolicyError(editPassword);
+                if (pwErr) {
+                  setFormError(pwErr);
+                  return;
+                }
               }
               editMut.mutate();
             }}
@@ -210,12 +230,13 @@ export function StaffPage() {
               <input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </div>
             <div className="field">
-              <label>New password (optional)</label>
+              <label>New password (optional — {PASSWORD_POLICY_HINT})</label>
               <input
                 type="password"
                 value={editPassword}
-                onChange={(e) => setEditPassword(e.target.value)}
+                onChange={(e) => setEditPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 placeholder="Leave blank to keep current"
+                maxLength={PASSWORD_MAX_LEN}
               />
             </div>
             <div className="row" style={{ justifyContent: "flex-end" }}>

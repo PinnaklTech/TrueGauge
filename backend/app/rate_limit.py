@@ -27,3 +27,4 @@ class SlidingWindowRateLimiter:
 
 
 login_limiter = SlidingWindowRateLimiter()
+scan_resolve_limiter = SlidingWindowRateLimiter()

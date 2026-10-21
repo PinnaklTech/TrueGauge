@@ -1,21 +1,31 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/tg/app-shell";
 import { ErrorBanner, PageState } from "@/components/tg/page-state";
 import { Button } from "@/components/ui/button";
-import { listCalibrations, listCertificates, listEquipment, downloadReport, type ReportFormat, type ReportType } from "@/lib/api";
+import {
+  listCalibrations,
+  listCertificates,
+  listEquipment,
+  listReportHistory,
+  downloadReport,
+  downloadStoredReport,
+  type ReportType,
+} from "@/lib/api";
 import {
   categoryCompliance,
   complianceScore,
   daysUntilDue,
   statusBreakdown,
 } from "@/lib/compliance";
+import { useWorkspaceFormat } from "@/lib/format-context";
 import {
   Download,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
   Info,
+  FileText,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -43,8 +53,17 @@ export const Route = createFileRoute("/workspace/$slug/reports")({
   component: ReportsPage,
 });
 
+const REPORT_TYPE_LABEL: Record<string, string> = {
+  compliance: "Compliance summary",
+  inventory: "Full inventory",
+  overdue: "Overdue / failed",
+  due: "Due within 30 days",
+};
+
 function ReportsPage() {
   const { slug } = Route.useParams();
+  const queryClient = useQueryClient();
+  const { formatDateTime } = useWorkspaceFormat();
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["equipment"],
     queryFn: () => listEquipment(),
@@ -62,6 +81,16 @@ function ReportsPage() {
     queryKey: ["certificates"],
     queryFn: () => listCertificates(),
   });
+  const {
+    data: history = [],
+    isLoading: historyLoading,
+    isError: historyError,
+    error: historyErr,
+    refetch: refetchHistory,
+  } = useQuery({
+    queryKey: ["report-history"],
+    queryFn: () => listReportHistory(),
+  });
   const equipment = data?.items ?? [];
   const calibrations = calData?.items ?? [];
   const certificates = certData?.items ?? [];
@@ -76,9 +105,9 @@ function ReportsPage() {
     const ids = new Set(certificates.map((c) => c.equipmentId));
     return active.filter((e) => ids.has(e.id)).length;
   }, [active, certificates]);
-  const [reportType, setReportType] = useState<ReportType>("inventory");
-  const [formatPreset, setFormatPreset] = useState<ReportFormat>("csv");
+  const [reportType, setReportType] = useState<ReportType>("compliance");
   const [downloading, setDownloading] = useState(false);
+  const [historyDownloadingId, setHistoryDownloadingId] = useState<number | null>(null);
   const overdueCount = useMemo(
     () =>
       equipment.filter((e) => {
@@ -150,15 +179,29 @@ function ReportsPage() {
     }
     setDownloading(true);
     try {
-      const result = await downloadReport({ type: reportType, format: formatPreset });
+      const result = await downloadReport({ type: reportType, format: "pdf" });
       toast.success(
-        `${formatPreset.toUpperCase()} ready` +
+        `PDF ready · ${result.filename}` +
           (result.rowCount ? ` · ${result.rowCount} row${result.rowCount === 1 ? "" : "s"}` : ""),
       );
+      await queryClient.invalidateQueries({ queryKey: ["report-history"] });
+      await refetchHistory();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Download failed");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const onDownloadStored = async (id: number) => {
+    setHistoryDownloadingId(id);
+    try {
+      const result = await downloadStoredReport(id);
+      toast.success(`Downloaded ${result.filename}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setHistoryDownloadingId(null);
     }
   };
 
@@ -392,13 +435,17 @@ function ReportsPage() {
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-xs">
+      <div
+        className="mt-4 rounded-xl border border-border bg-card p-5 shadow-xs"
+        data-tour="reports-generate"
+      >
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Generate &amp; download report
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          TrueGage builds the report from live workspace data. CSV is ideal for spreadsheets; PDF is
-          audit-ready with a summary cover and equipment table.
+          Thetruegage builds an audit-ready PDF from live workspace data. The file is named after its
+          Report ID (for example TG-RPT-20261021-0142.pdf). The last 3 PDFs are kept here for
+          re-download.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="space-y-1.5 text-sm" htmlFor="report-type">
@@ -409,48 +456,24 @@ function ReportsPage() {
               onChange={(e) => setReportType(e.target.value as ReportType)}
               className="tg-select"
             >
-              <option value="inventory">Full inventory ({equipment.length})</option>
               <option value="compliance">Compliance summary ({readiness}% ready)</option>
+              <option value="inventory">Full inventory ({equipment.length})</option>
               <option value="overdue">Overdue / failed ({overdueCount})</option>
               <option value="due">Due within 30 days ({dueSoonCount})</option>
             </select>
           </label>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 text-sm">
             <span className="text-xs text-muted-foreground">Format</span>
-            <div className="flex gap-1 rounded-md border border-border bg-surface p-1">
-              {(["csv", "pdf"] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setFormatPreset(f)}
-                  className={cn(
-                    "flex-1 rounded-[5px] px-2 py-1.5 text-xs font-semibold uppercase",
-                    formatPreset === f
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {f}
-                </button>
-              ))}
+            <div className="flex h-10 items-center rounded-md border border-border bg-surface px-3 text-sm font-semibold text-foreground">
+              PDF
             </div>
           </div>
         </div>
         <div className="mt-3 rounded-lg border border-dashed border-border bg-surface/40 px-3 py-2.5 text-xs text-muted-foreground">
-          {formatPreset === "pdf" ? (
-            <>
-              PDF includes readiness %, overdue / due-soon counts, and an equipment detail table
-              {reportType === "compliance"
-                ? " for the full inventory."
-                : ` filtered to this report (${exportRows.length} row${exportRows.length === 1 ? "" : "s"}).`}
-            </>
-          ) : (
-            <>
-              CSV columns: tag, name, category, department, location, serial, status, last/next
-              calibration, owner — {exportRows.length} row
-              {exportRows.length === 1 ? "" : "s"}.
-            </>
-          )}
+          PDF includes readiness %, overdue / due-soon counts, and an equipment detail table
+          {reportType === "compliance"
+            ? " for the full inventory."
+            : ` filtered to this report (${exportRows.length} row${exportRows.length === 1 ? "" : "s"}).`}
         </div>
         <Button
           className="mt-4 w-full sm:w-auto"
@@ -460,8 +483,77 @@ function ReportsPage() {
           <Download className="mr-1.5 h-4 w-4" />
           {downloading
             ? "Generating…"
-            : `Download ${formatPreset.toUpperCase()} (${exportRows.length})`}
+            : `Download PDF (${exportRows.length})`}
         </Button>
+      </div>
+
+      <div
+        className="mt-4 rounded-xl border border-border bg-card p-5 shadow-xs"
+        data-tour="reports-history"
+      >
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Previously generated
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Up to 3 recent PDFs stored in your workspace. Older ones are removed automatically.
+        </p>
+        {historyLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Loading history…</p>
+        ) : historyError ? (
+          <div className="mt-4 flex flex-col gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-4 text-sm text-destructive">
+            <div>
+              Could not load report history
+              {historyErr instanceof Error ? `: ${historyErr.message}` : "."}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-fit"
+              onClick={() => void refetchHistory()}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : history.length === 0 ? (
+          <div className="mt-4 flex gap-2 rounded-lg border border-dashed border-border bg-surface/50 px-3 py-4 text-sm text-muted-foreground">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>No reports yet. Generate a PDF above to see it listed here.</div>
+          </div>
+        ) : (
+          <ul className="mt-4 divide-y divide-border rounded-lg border border-border">
+            {history.map((item) => (
+              <li
+                key={item.id}
+                className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-foreground">{item.filename}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {REPORT_TYPE_LABEL[item.reportType] ?? item.reportType}
+                    {" · "}
+                    {item.generatedByName || "User"}
+                    {item.generatedByRole ? ` (${item.generatedByRole})` : ""}
+                    {" · "}
+                    {formatDateTime(item.createdAt)}
+                    {item.rowCount
+                      ? ` · ${item.rowCount} row${item.rowCount === 1 ? "" : "s"}`
+                      : ""}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={historyDownloadingId === item.id}
+                  onClick={() => void onDownloadStored(item.id)}
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {historyDownloadingId === item.id ? "Downloading…" : "Download"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </AppShell>
   );

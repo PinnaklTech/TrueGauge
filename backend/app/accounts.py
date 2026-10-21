@@ -53,6 +53,7 @@ from app.schemas import (
     AuthTokenOut,
     ChecklistItemOut,
     DayCountOut,
+    EffectiveSettingsOut,
     EmailAuditListOut,
     EmailAuditOut,
     ForcePasswordIn,
@@ -62,10 +63,14 @@ from app.schemas import (
     MeOut,
     OrgProfileIn,
     OrgProfileOut,
+    OrgSettingsOut,
+    OrgSettingsPatchIn,
     OrgTaxonomyIn,
     OrgTaxonomyOut,
     OrgTaxonomyTermIn,
     OrgTaxonomyTermRenameIn,
+    TestReminderOut,
+    UserPreferencesIn,
     PlatformActivityItem,
     PlatformActivityOut,
     PlatformDataSummaryOut,
@@ -113,12 +118,15 @@ from app.security import (
     hash_password,
     needs_rehash,
     new_opaque_token,
+    validate_new_password,
     verify_password,
     verify_password_with_dummy,
 )
 from app.ssrf import validate_smtp_host
 from app.services.email_service import (
     EmailError,
+    ReminderEquipmentRow,
+    OverdueEquipmentRow,
     build_message,
     get_or_create_platform_settings,
     is_system_smtp_ready,
@@ -126,12 +134,25 @@ from app.services.email_service import (
     load_system_smtp_config,
     platform_smtp_configured,
     send_company_welcome_email,
+    send_daily_digest_email,
     send_login_credentials_email,
     send_message,
     smtp_configured,
 )
 from app.services import r2_storage
+from app.services.audit import record_audit_event
 from app.services.notifications import add_system_notification, sync_due_date_notifications
+from app.services.org_settings import (
+    DATE_FORMATS,
+    TIME_FORMATS,
+    WEEK_STARTS,
+    effective_to_dict,
+    format_date,
+    is_valid_iana,
+    normalize_timezone,
+    org_defaults_from_row,
+    resolve_effective_settings,
+)
 from app.services.reminder_engine import last_daily_run_at, run_reminder_tick
 from app.services.storage_quota import (
     storage_fields_for_tenant,
@@ -658,9 +679,17 @@ def notifications_list_for_user(
     tenant_id: int,
     user_id: int,
 ) -> AppNotificationListOut:
-    rows = sync_due_date_notifications(db, tenant_id)
+    from app.services.reminder_engine import tenant_local_today
+
+    settings_row = get_or_create_settings(db, tenant_id)
+    rows = sync_due_date_notifications(
+        db,
+        tenant_id,
+        today=tenant_local_today(settings_row),
+    )
     user = db.get(User, user_id)
-    if user is not None and not user.notify_in_app:
+    # Hide engine reminders only when user opted out of both channels
+    if user is not None and not user.notify_in_app and not user.notify_email:
         rows = [r for r in rows if r.type != "reminder"]
     read_ids = _user_read_notification_ids(db, user_id, [r.id for r in rows])
     items = [notification_to_out(r, read=r.id in read_ids) for r in rows]
@@ -886,12 +915,112 @@ def me(
     ctx: TenantContext = Depends(get_tenant_context),
 ) -> MeOut:
     tenant = db.get(Tenant, ctx.tenant_id)
+    settings_row = get_or_create_settings(db, ctx.tenant_id)
+    eff = resolve_effective_settings(settings_row, ctx.user)
     data = user_to_out(ctx.user).model_dump()
     data["tenant_id"] = ctx.tenant_id
     data["tenant_name"] = tenant.name if tenant else ""
     data["tenant_slug"] = tenant.slug if tenant else ""
+    data["timezone_override"] = getattr(ctx.user, "timezone_override", None)
+    data["date_format_override"] = getattr(ctx.user, "date_format_override", None)
+    data["time_format_override"] = getattr(ctx.user, "time_format_override", None)
+    data["effective_settings"] = EffectiveSettingsOut(**effective_to_dict(eff))
     data.update(storage_fields_for_tenant(db, tenant))
     return MeOut(**data)
+
+
+@router.patch("/me/preferences", response_model=MeOut)
+def patch_me_preferences(
+    body: UserPreferencesIn,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> MeOut:
+    """Update display overrides and channel toggles when org policy allows."""
+    settings_row = get_or_create_settings(db, ctx.tenant_id)
+    user = ctx.user
+    data = body.model_dump(exclude_unset=True)
+
+    allow_display = bool(getattr(settings_row, "allow_user_display_override", False))
+    allow_channel = bool(getattr(settings_row, "allow_user_channel_toggle", True))
+
+    display_keys = {
+        "timezone_override",
+        "date_format_override",
+        "time_format_override",
+        "clear_timezone_override",
+        "clear_date_format_override",
+        "clear_time_format_override",
+    }
+    channel_keys = {"notify_email", "notify_in_app"}
+    touching_display = any(k in data for k in display_keys)
+    touching_channel = any(k in data for k in channel_keys)
+    if touching_display and not allow_display:
+        raise HTTPException(
+            status_code=403,
+            detail="Organization admin has locked display preferences",
+        )
+    if touching_channel and not allow_channel:
+        raise HTTPException(
+            status_code=403,
+            detail="Organization admin has locked reminder channel preferences",
+        )
+
+    if allow_display:
+        if data.get("clear_timezone_override"):
+            user.timezone_override = None
+        elif "timezone_override" in data:
+            raw = data["timezone_override"]
+            if raw is None or str(raw).strip() == "":
+                user.timezone_override = None
+            elif not is_valid_iana(str(raw)):
+                raise HTTPException(status_code=400, detail="Invalid timezone")
+            else:
+                user.timezone_override = str(raw).strip()
+
+        if data.get("clear_date_format_override"):
+            user.date_format_override = None
+        elif "date_format_override" in data:
+            raw = data["date_format_override"]
+            if raw is None or str(raw).strip() == "":
+                user.date_format_override = None
+            elif str(raw) not in DATE_FORMATS:
+                raise HTTPException(status_code=400, detail="Invalid date_format")
+            else:
+                user.date_format_override = str(raw)
+
+        if data.get("clear_time_format_override"):
+            user.time_format_override = None
+        elif "time_format_override" in data:
+            raw = data["time_format_override"]
+            if raw is None or str(raw).strip() == "":
+                user.time_format_override = None
+            elif str(raw) not in TIME_FORMATS:
+                raise HTTPException(status_code=400, detail="Invalid time_format")
+            else:
+                user.time_format_override = str(raw)
+
+    if allow_channel:
+        if "notify_email" in data and data["notify_email"] is not None:
+            user.notify_email = bool(data["notify_email"])
+        if "notify_in_app" in data and data["notify_in_app"] is not None:
+            user.notify_in_app = bool(data["notify_in_app"])
+
+    user.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    # Rebuild MeOut
+    tenant = db.get(Tenant, ctx.tenant_id)
+    eff = resolve_effective_settings(settings_row, user)
+    out = user_to_out(user).model_dump()
+    out["tenant_id"] = ctx.tenant_id
+    out["tenant_name"] = tenant.name if tenant else ""
+    out["tenant_slug"] = tenant.slug if tenant else ""
+    out["timezone_override"] = user.timezone_override
+    out["date_format_override"] = user.date_format_override
+    out["time_format_override"] = user.time_format_override
+    out["effective_settings"] = EffectiveSettingsOut(**effective_to_dict(eff))
+    out.update(storage_fields_for_tenant(db, tenant))
+    return MeOut(**out)
 
 
 @router.patch("/auth/me", response_model=UserOut)
@@ -921,8 +1050,10 @@ def update_me(
     if "password" in data:
         pw = data.pop("password")
         if pw:
-            if len(pw) < 6:
-                raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+            try:
+                pw = validate_new_password(pw)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
             user.password_hash = hash_password(pw)
             _bump_token_version(user)
             _revoke_refresh_tokens(db, user.id)
@@ -1291,8 +1422,10 @@ def create_platform_staff(
     email = _normalize_email(body.email)
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid email address")
-    if len(body.password) < 12:
-        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    try:
+        validate_new_password(body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     existing = db.query(User).filter(User.email == email).one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -1347,7 +1480,11 @@ def update_platform_staff(
             _bump_token_version(row)
             _revoke_refresh_tokens(db, row.id)
     if "password" in data and data["password"]:
-        row.password_hash = hash_password(data["password"])
+        try:
+            pw = validate_new_password(data["password"])
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        row.password_hash = hash_password(pw)
         _bump_token_version(row)
         _revoke_refresh_tokens(db, row.id)
     row.updated_at = datetime.now(timezone.utc)
@@ -1756,8 +1893,10 @@ def platform_create_tenant_user(
     email = _normalize_email(body.email)
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid email address")
-    if len(body.password) < 12:
-        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    try:
+        validate_new_password(body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     existing = db.query(User).filter(User.email == email).one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -1856,7 +1995,11 @@ def platform_update_tenant_user(
             _bump_token_version(row)
             _revoke_refresh_tokens(db, row.id)
     if "password" in data and data["password"]:
-        row.password_hash = hash_password(data["password"])
+        try:
+            pw = validate_new_password(data["password"])
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        row.password_hash = hash_password(pw)
         _bump_token_version(row)
         _revoke_refresh_tokens(db, row.id)
     row.updated_at = datetime.now(timezone.utc)
@@ -1940,8 +2083,10 @@ def platform_resend_welcome_email(
     if target.role == PLATFORM_ADMIN:
         raise HTTPException(status_code=400, detail="Cannot send welcome to platform admin")
     password = body.password.strip()
-    if len(password) < 12:
-        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    try:
+        password = validate_new_password(password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     target.password_hash = hash_password(password)
     _bump_token_version(target)
     _revoke_refresh_tokens(db, target.id)
@@ -2251,7 +2396,11 @@ def force_password(
         raise HTTPException(status_code=404, detail="User not found")
     if row.role == PLATFORM_ADMIN:
         raise HTTPException(status_code=400, detail="Cannot reset another platform admin this way")
-    row.password_hash = hash_password(body.password)
+    try:
+        new_pw = validate_new_password(body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    row.password_hash = hash_password(new_pw)
     _bump_token_version(row)
     _revoke_refresh_tokens(db, row.id)
     row.updated_at = datetime.now(timezone.utc)
@@ -2442,8 +2591,10 @@ def create_tenant(
     email = _normalize_email(admin_email)
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid admin email address")
-    if len(admin_password) < 12:
-        raise HTTPException(status_code=400, detail="Admin password must be at least 12 characters")
+    try:
+        admin_password = validate_new_password(admin_password, label="Admin password")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     existing = db.query(User).filter(User.email == email).one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -2647,8 +2798,10 @@ def create_user(
     email = _normalize_email(body.email)
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Enter a valid email address")
-    if len(body.password) < 12:
-        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    try:
+        validate_new_password(body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     existing = db.query(User).filter(User.email == email).one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
@@ -2775,8 +2928,10 @@ def send_user_credentials(
     if row.role == PLATFORM_ADMIN:
         raise HTTPException(status_code=400, detail="Cannot send credentials to platform admin")
     password = body.password.strip()
-    if len(password) < 12:
-        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    try:
+        password = validate_new_password(password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     row.password_hash = hash_password(password)
     _bump_token_version(row)
     _revoke_refresh_tokens(db, row.id)
@@ -2807,8 +2962,10 @@ def admin_update_user(
     if "password" in data:
         pw = data.pop("password")
         if pw:
-            if len(pw) < 6:
-                raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+            try:
+                pw = validate_new_password(pw)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
             row.password_hash = hash_password(pw)
             _bump_token_version(row)
             _revoke_refresh_tokens(db, row.id)
@@ -2908,7 +3065,10 @@ def save_org(
     row.company_name = body.company_name.strip()
     row.industry = body.industry.strip()
     row.address = body.address.strip() or None
-    row.timezone = body.timezone.strip() or "UTC"
+    tz = (body.timezone or "").strip() or "UTC"
+    if not is_valid_iana(tz):
+        raise HTTPException(status_code=400, detail="Invalid IANA timezone")
+    row.timezone = normalize_timezone(tz)
     accent = body.accent_color.strip() or "#0f766e"
     if not accent.startswith("#"):
         accent = f"#{accent}"
@@ -2920,6 +3080,161 @@ def save_org(
     db.commit()
     db.refresh(row)
     return org_to_out(row)
+
+
+def _org_settings_out(row: AppSettings) -> OrgSettingsOut:
+    base = org_defaults_from_row(row)
+    return OrgSettingsOut(
+        timezone=base["timezone"],
+        date_format=base["date_format"],
+        time_format=base["time_format"],
+        week_start=base["week_start"],
+        reminder_send_hour=base["reminder_send_hour"],
+        reminder_skip_weekends=base["reminder_skip_weekends"],
+        allow_user_display_override=base["allow_user_display_override"],
+        allow_user_channel_toggle=base["allow_user_channel_toggle"],
+        remind_30d=bool(row.remind_30d),
+        remind_14d=bool(row.remind_14d),
+        remind_7d=bool(row.remind_7d),
+        remind_1d=bool(row.remind_1d),
+        remind_overdue_daily=bool(row.remind_overdue_daily),
+        remind_weekly_digest=bool(row.remind_weekly_digest),
+    )
+
+
+@router.get("/org/settings", response_model=OrgSettingsOut)
+def get_org_settings(
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> OrgSettingsOut:
+    return _org_settings_out(get_or_create_settings(db, ctx.tenant_id))
+
+
+@router.patch("/org/settings", response_model=OrgSettingsOut)
+def patch_org_settings(
+    body: OrgSettingsPatchIn,
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_admin),
+) -> OrgSettingsOut:
+    row = get_or_create_settings(db, ctx.tenant_id)
+    before = _org_settings_out(row).model_dump()
+    data = body.model_dump(exclude_unset=True)
+
+    if "timezone" in data and data["timezone"] is not None:
+        tz = str(data["timezone"]).strip() or "UTC"
+        if not is_valid_iana(tz):
+            raise HTTPException(status_code=400, detail="Invalid IANA timezone")
+        row.timezone = normalize_timezone(tz)
+    if "date_format" in data and data["date_format"] is not None:
+        if data["date_format"] not in DATE_FORMATS:
+            raise HTTPException(status_code=400, detail="Invalid date_format")
+        row.date_format = data["date_format"]
+    if "time_format" in data and data["time_format"] is not None:
+        if data["time_format"] not in TIME_FORMATS:
+            raise HTTPException(status_code=400, detail="Invalid time_format")
+        row.time_format = data["time_format"]
+    if "week_start" in data and data["week_start"] is not None:
+        if data["week_start"] not in WEEK_STARTS:
+            raise HTTPException(status_code=400, detail="Invalid week_start")
+        row.week_start = data["week_start"]
+    if "reminder_send_hour" in data and data["reminder_send_hour"] is not None:
+        row.reminder_hour_local = int(data["reminder_send_hour"])
+    if "reminder_skip_weekends" in data and data["reminder_skip_weekends"] is not None:
+        row.reminder_skip_weekends = bool(data["reminder_skip_weekends"])
+    if "allow_user_display_override" in data and data["allow_user_display_override"] is not None:
+        row.allow_user_display_override = bool(data["allow_user_display_override"])
+    if "allow_user_channel_toggle" in data and data["allow_user_channel_toggle"] is not None:
+        row.allow_user_channel_toggle = bool(data["allow_user_channel_toggle"])
+    for flag in (
+        "remind_30d",
+        "remind_14d",
+        "remind_7d",
+        "remind_1d",
+        "remind_overdue_daily",
+        "remind_weekly_digest",
+    ):
+        if flag in data and data[flag] is not None:
+            setattr(row, flag, bool(data[flag]))
+
+    after = _org_settings_out(row).model_dump()
+    changed = {k: {"old": before[k], "new": after[k]} for k in after if before.get(k) != after.get(k)}
+    if changed:
+        detail = json.dumps(changed, default=str)[:512]
+        record_audit_event(
+            db,
+            tenant_id=ctx.tenant_id,
+            user=ctx.user,
+            action="org.settings.updated",
+            target_type="settings",
+            target_id=str(ctx.tenant_id),
+            target_name="Organization settings",
+            detail=detail,
+        )
+    db.commit()
+    db.refresh(row)
+    return _org_settings_out(row)
+
+
+@router.post("/org/settings/test-reminder", response_model=TestReminderOut)
+def send_test_reminder(
+    db: Session = Depends(get_db),
+    ctx: TenantContext = Depends(require_admin),
+) -> TestReminderOut:
+    row = get_or_create_settings(db, ctx.tenant_id)
+    if not smtp_configured(row):
+        raise HTTPException(status_code=400, detail="Configure SMTP under Email Delivery first")
+    try:
+        config = load_smtp_config(row)
+    except EmailError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    eff = resolve_effective_settings(row, ctx.user)
+    sample_due = format_date(date.today(), eff.date_format)
+    overdue_items = [
+        OverdueEquipmentRow(
+            name="Sample Micrometer (test)",
+            tag="DEMO-001",
+            due_date=sample_due,
+            days_overdue=3,
+        )
+    ]
+    due_items = [
+        ReminderEquipmentRow(
+            name="Sample Caliper (test)",
+            tag="DEMO-002",
+            due_date=sample_due,
+            days_until=7,
+        )
+    ]
+    tenant = db.get(Tenant, ctx.tenant_id)
+    app_settings = get_settings()
+    cta = app_settings.workspace_equipment_url(tenant.slug if tenant else "")
+    prefs = (
+        f"{app_settings.app_public_url.rstrip('/')}/workspace/{tenant.slug}/profile"
+        if tenant and tenant.slug
+        else app_settings.app_public_url
+    )
+    org_name = (row.company_name or (tenant.name if tenant else "") or "Your organization").strip()
+    try:
+        send_daily_digest_email(
+            config,
+            to_email=ctx.user.email,
+            to_name=ctx.user.full_name or "",
+            overdue_items=overdue_items,
+            due_1_items=[],
+            due_7_items=due_items,
+            due_14_items=[],
+            due_30_items=[],
+            cta_url=cta,
+            org_name=org_name,
+            preferences_url=prefs,
+            allow_user_channel_toggle=eff.allow_user_channel_toggle,
+        )
+    except EmailError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Failed to send test reminder: {exc}") from exc
+    return TestReminderOut(ok=True, message=f"Test reminder sent to {ctx.user.email}")
 
 
 @router.get("/org/taxonomy", response_model=OrgTaxonomyOut)
@@ -3023,7 +3338,7 @@ def _reminder_rules_out(db: Session, row: AppSettings) -> ReminderRulesOut:
         remind_1d=bool(row.remind_1d),
         remind_overdue_daily=bool(row.remind_overdue_daily),
         remind_weekly_digest=bool(row.remind_weekly_digest),
-        reminder_hour_local=int(row.reminder_hour_local or 8),
+        reminder_hour_local=int(row.reminder_hour_local or 9),
         last_daily_run_at=last_daily_run_at(db, row.tenant_id),
     )
 
@@ -3345,7 +3660,14 @@ def mark_all_notifications_read(
     db: Session = Depends(get_db),
     ctx: TenantContext = Depends(get_tenant_context),
 ) -> AppNotificationListOut:
-    rows = sync_due_date_notifications(db, ctx.tenant_id)
+    from app.services.reminder_engine import tenant_local_today
+
+    settings_row = get_or_create_settings(db, ctx.tenant_id)
+    rows = sync_due_date_notifications(
+        db,
+        ctx.tenant_id,
+        today=tenant_local_today(settings_row),
+    )
     _mark_notifications_read_for_user(
         db,
         user_id=ctx.user.id,

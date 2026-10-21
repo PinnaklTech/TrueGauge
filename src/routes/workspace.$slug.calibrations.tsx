@@ -20,7 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus } from "lucide-react";
-import { format } from "date-fns";
+import { format as formatIso } from "date-fns";
+import { useWorkspaceFormat } from "@/lib/format-context";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -45,6 +46,7 @@ function CalibrationsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
+  const { formatDate } = useWorkspaceFormat();
   const tab: CalTab = search.tab ?? "schedules";
 
   const setTab = (next: CalTab, equipmentId?: string) => {
@@ -220,7 +222,7 @@ function CalibrationsPage() {
                           <td className="px-4 py-3 text-muted-foreground">{e.category || "—"}</td>
                           <td className="px-4 py-3 text-muted-foreground">{e.department || "—"}</td>
                           <td className="px-4 py-3 font-mono text-xs">
-                            {next ? format(next, "yyyy-MM-dd") : "—"}
+                            {next ? formatDate(next) : "—"}
                           </td>
                           <td className="px-4 py-3">
                             {allowWrite ? (
@@ -313,9 +315,10 @@ function CalibrationsPage() {
 }
 
 function HistoryRow({ record: c, slug }: { record: AppCalibration; slug: string }) {
+  const { formatDate } = useWorkspaceFormat();
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/40">
-      <td className="px-4 py-3">{format(new Date(c.date), "MMM d, yyyy")}</td>
+      <td className="px-4 py-3">{formatDate(c.date)}</td>
       <td className="px-4 py-3">
         <Link
           to="/workspace/$slug/equipment/$id"
@@ -353,6 +356,7 @@ function UrgencyCard({
   tone: "danger" | "warning";
   onLog?: () => void;
 }) {
+  const { formatDate } = useWorkspaceFormat();
   const next = parseDate(e.nextCalibration);
   return (
     <div className="rounded-lg border border-border bg-surface p-4">
@@ -378,7 +382,7 @@ function UrgencyCard({
             tone === "danger" ? "text-destructive" : "text-warning",
           )}
         >
-          {tone === "danger" ? "Overdue" : "Due Soon"} · {next ? format(next, "yyyy-MM-dd") : "—"}
+          {tone === "danger" ? "Overdue" : "Due Soon"} · {next ? formatDate(next) : "—"}
         </span>
         {onLog ? (
           <button type="button" onClick={onLog} className="text-xs font-medium text-primary hover:underline">
@@ -406,7 +410,7 @@ function LogCalibrationForm({
   onSaved: () => void | Promise<void>;
 }) {
   const [equipmentId, setEquipmentId] = useState(initialEquipmentId ?? "");
-  const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [date, setDate] = useState(() => formatIso(new Date(), "yyyy-MM-dd"));
   const [providerType, setProviderType] = useState<ProviderType>("internal");
   const [provider, setProvider] = useState("");
   const [technician, setTechnician] = useState("");

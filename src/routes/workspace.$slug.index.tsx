@@ -29,7 +29,7 @@ import {
   addMonths,
   eachDayOfInterval,
   endOfMonth,
-  format,
+  format as formatIso,
   isSameDay,
   isSameMonth,
   startOfMonth,
@@ -37,6 +37,7 @@ import {
   endOfWeek,
   subMonths,
 } from "date-fns";
+import { useWorkspaceFormat } from "@/lib/format-context";
 import { cn } from "@/lib/utils";
 import { useMemo, useState, type CSSProperties } from "react";
 
@@ -80,15 +81,6 @@ function auditActionLabel(action: string) {
   }
 }
 
-function formatAuditWhen(iso: string) {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return format(d, "MMM d, yyyy · HH:mm");
-  } catch {
-    return iso;
-  }
-}
 
 function formatDashboardBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -98,6 +90,7 @@ function formatDashboardBytes(bytes: number) {
 }
 
 function Dashboard() {
+  const { formatDate, formatDateTime, weekStartsOn } = useWorkspaceFormat();
   const { slug } = Route.useParams();
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["equipment"],
@@ -135,7 +128,7 @@ function Dashboard() {
   const failedCount = breakdown.failed;
   const requiresAction = overdue.length;
   const dueIn30 = critical.length + normal.length;
-  const todayLabel = format(new Date(), "MMMM d, yyyy");
+  const todayLabel = formatDate(new Date());
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [breakdownHover, setBreakdownHover] = useState<{
     label: string;
@@ -156,17 +149,17 @@ function Dashboard() {
   );
 
   const calendarDays = useMemo(() => {
-    const start = startOfWeek(startOfMonth(month));
-    const end = endOfWeek(endOfMonth(month));
+    const start = startOfWeek(startOfMonth(month), { weekStartsOn });
+    const end = endOfWeek(endOfMonth(month), { weekStartsOn });
     return eachDayOfInterval({ start, end });
-  }, [month]);
+  }, [month, weekStartsOn]);
 
   const duesByDay = useMemo(() => {
     const map = new Map<string, Equipment[]>();
     for (const e of equipment) {
       const next = parseDate(e.nextCalibration);
       if (!next || !isSameMonth(next, month)) continue;
-      const key = format(next, "yyyy-MM-dd");
+      const key = formatIso(next, "yyyy-MM-dd");
       const list = map.get(key) ?? [];
       list.push(e);
       map.set(key, list);
@@ -347,7 +340,7 @@ function Dashboard() {
                       {Math.abs(e.days)}d Overdue
                     </div>
                     <div className="mt-1 text-[11px] font-medium text-destructive">
-                      Due: {next ? format(next, "yyyy-MM-dd") : "—"}
+                      Due: {next ? formatDate(next) : "—"}
                     </div>
                   </div>
                 </li>
@@ -367,7 +360,7 @@ function Dashboard() {
                   Calibration Calendar
                 </h2>
                 <p className="font-display text-xl font-semibold text-foreground">
-                  {format(month, "MMMM yyyy")}
+                  {formatIso(month, "MMMM yyyy")}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -421,7 +414,7 @@ function Dashboard() {
             </div>
             <div className="mt-1 grid grid-cols-7 gap-1.5">
               {calendarDays.map((day) => {
-                const key = format(day, "yyyy-MM-dd");
+                const key = formatIso(day, "yyyy-MM-dd");
                 const dues = duesByDay.get(key) ?? [];
                 const inMonth = isSameMonth(day, month);
                 const isToday = isSameDay(day, new Date());
@@ -442,7 +435,7 @@ function Dashboard() {
                         isToday ? "text-primary" : "text-foreground",
                       )}
                     >
-                      {format(day, "d")}
+                      {formatIso(day, "d")}
                     </div>
                     <div className="mt-1 space-y-0.5">
                       {dues.slice(0, 2).map((e) => {
@@ -482,7 +475,7 @@ function Dashboard() {
                 <span className="h-2 w-2 rounded-full bg-destructive" /> Overdue / Out-of-Spec
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full border-2 border-primary" /> Today ({format(new Date(), "MMM d, yyyy")})
+                <span className="h-2 w-2 rounded-full border-2 border-primary" /> Today ({formatDate(new Date())})
               </span>
             </div>
           </section>
@@ -531,7 +524,7 @@ function Dashboard() {
                           </Link>
                           <div className="mt-1 text-xs text-muted-foreground">
                             In {e.days} day{e.days === 1 ? "" : "s"}
-                            {next ? ` (${format(next, "yyyy-MM-dd")})` : ""}
+                            {next ? ` (${formatDate(next)})` : ""}
                             {e.owner ? ` · Assigned: ${e.owner}` : ""}
                           </div>
                         </div>
@@ -690,7 +683,7 @@ function Dashboard() {
                         </div>
                       </div>
                       <div className="shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
-                        {formatAuditWhen(evt.timestamp)}
+                        {formatDateTime(evt.timestamp)}
                       </div>
                     </div>
                     {evt.target_type === "equipment" && evt.target_id ? (

@@ -29,7 +29,8 @@ import { urgencyBuckets } from "@/lib/compliance";
 import { isAdminRole } from "@/lib/rbac";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { format, isValid, parseISO } from "date-fns";
+import { isValid, parseISO } from "date-fns";
+import { useWorkspaceFormat } from "@/lib/format-context";
 import { Mail, Send } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +43,7 @@ function NotificationsPage() {
   const { slug } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { formatDate, formatDateTime } = useWorkspaceFormat();
   const [tab, setTab] = useState<"inbox" | "emails">("inbox");
   const [sendOpen, setSendOpen] = useState(false);
 
@@ -182,7 +184,10 @@ function NotificationsPage() {
               onRetry={() => void refetch()}
             />
           )}
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+          <div
+            className="overflow-hidden rounded-xl border border-border bg-card shadow-xs"
+            data-tour="notifications-inbox"
+          >
             {isLoading ? (
               <PageState
                 variant="loading"
@@ -195,8 +200,8 @@ function NotificationsPage() {
                 title="No notifications yet"
                 description={
                   equipment.length === 0
-                    ? "Add or import equipment first. Overdue and due-within-3-days assets will appear here."
-                    : "None of your equipment is overdue or due within 3 days right now."
+                    ? "Add or import equipment first. Overdue and due-soon items (30 / 14 / 7 / 1 day windows from Alarm & Reminder Rules) appear here when the reminder engine runs."
+                    : "No overdue or due-soon calibrations match your reminder rules right now. Digests use the same windows as email."
                 }
                 action={{
                   label: "Open equipment",
@@ -210,7 +215,7 @@ function NotificationsPage() {
                   const when = (() => {
                     if (!n.when) return null;
                     const d = parseISO(n.when);
-                    return isValid(d) ? format(d, "yyyy-MM-dd") : n.when;
+                    return isValid(d) ? formatDate(d) : n.when;
                   })();
                   return (
                     <li
@@ -310,16 +315,21 @@ function NotificationsPage() {
 }
 
 function EmailRow({ row }: { row: EmailAuditItem }) {
+  const { formatDateTime } = useWorkspaceFormat();
   const when = (() => {
     const d = parseISO(row.created_at);
-    return isValid(d) ? format(d, "MMM d, yyyy HH:mm") : row.created_at;
+    return isValid(d) ? formatDateTime(d) : row.created_at;
   })();
   const kindLabel =
     row.kind === "overdue_alert"
       ? "Overdue alert"
-      : row.kind === "test_check"
-        ? "Check email"
-        : row.kind;
+      : row.kind === "daily_digest"
+        ? "Daily digest"
+        : row.kind === "weekly_digest"
+          ? "Weekly digest"
+          : row.kind === "test_check"
+            ? "Check email"
+            : row.kind;
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/40">
       <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">{when}</td>

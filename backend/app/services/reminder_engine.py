@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import (
     AppSettings,
+    EmailAuditLog,
     EquipmentCache,
     NotificationRecipient,
     ReminderDispatch,
@@ -27,13 +28,17 @@ from app.services.email_service import (
     OverdueEquipmentRow,
     ReminderEquipmentRow,
     load_smtp_config,
-    send_due_reminder_email,
-    send_overdue_alert_email,
+    send_daily_digest_email,
     send_weekly_digest_email,
     smtp_configured,
 )
 from app.services.equipment_sync import refresh_equipment_statuses
-from app.services.notifications import sync_due_date_notifications
+from app.services.notifications import sync_due_date_notifications, upsert_notification
+from app.services.org_settings import (
+    format_date,
+    is_weekend,
+    org_defaults_from_row,
+)
 
 logger = logging.getLogger("truegauge.reminders")
 
@@ -84,7 +89,8 @@ def reminder_rules_from_settings(row: AppSettings) -> dict:
         "remind_1d": bool(row.remind_1d),
         "remind_overdue_daily": bool(row.remind_overdue_daily),
         "remind_weekly_digest": bool(row.remind_weekly_digest),
-        "reminder_hour_local": int(row.reminder_hour_local or 8),
+        "reminder_hour_local": int(row.reminder_hour_local or 9),
+        "reminder_skip_weekends": bool(getattr(row, "reminder_skip_weekends", False)),
     }
 
 
@@ -154,7 +160,7 @@ def _requeue_stale_failed(db: Session, now_utc: datetime) -> None:
 
 
 def claim_due_jobs(db: Session, now_utc: datetime) -> list[ReminderJob]:
-    """Claim pending jobs whose tenant local hour has reached reminder_hour_local."""
+    """Claim pending jobs when tenant local hour equals reminder_hour_local."""
     _requeue_stale_failed(db, now_utc)
     db.flush()
 
@@ -168,11 +174,15 @@ def claim_due_jobs(db: Session, now_utc: datetime) -> list[ReminderJob]:
             continue
         local = tenant_local_now(settings_row)
         local_today = local.date()
-        hour = int(settings_row.reminder_hour_local or 8)
+        hour = int(settings_row.reminder_hour_local or 9)
+        skip_weekends = bool(getattr(settings_row, "reminder_skip_weekends", False))
+        if skip_weekends and is_weekend(local_today):
+            continue
         ensure_jobs_for_tenant(
             db, tenant_id=tenant.id, settings_row=settings_row, local_today=local_today
         )
-        if local.hour < hour:
+        # Exact local hour match (hourly selection); DST-safe via ZoneInfo
+        if local.hour != hour:
             continue
 
         stmt = (
@@ -318,19 +328,26 @@ def _mark_dispatch_failed(row: ReminderDispatch, err: str) -> None:
     row.error = (err or "")[:2000]
 
 
-def _row_from_eq(eq: EquipmentCache, today: date, *, overdue: bool) -> ReminderEquipmentRow | OverdueEquipmentRow:
+def _row_from_eq(
+    eq: EquipmentCache,
+    today: date,
+    *,
+    overdue: bool,
+    date_format: str = "YYYY-MM-DD",
+) -> ReminderEquipmentRow | OverdueEquipmentRow:
     days = _days_until(eq, today) or 0
+    due_disp = format_date(eq.next_calibration, date_format) if eq.next_calibration else ""
     if overdue:
         return OverdueEquipmentRow(
             name=eq.name or "Unnamed equipment",
             tag=eq.tag or eq.public_id,
-            due_date=eq.next_calibration.isoformat() if eq.next_calibration else "",
+            due_date=due_disp,
             days_overdue=abs(min(days, 0)),
         )
     return ReminderEquipmentRow(
         name=eq.name or "Unnamed equipment",
         tag=eq.tag or eq.public_id,
-        due_date=eq.next_calibration.isoformat() if eq.next_calibration else "",
+        due_date=due_disp,
         days_until=max(days, 0),
     )
 
@@ -392,24 +409,7 @@ def _process_daily(
         if disp is not None:
             _mark_dispatch_sent(disp, now_utc)
 
-    if not smtp_configured(settings_row):
-        return ok
-
-    try:
-        config = load_smtp_config(settings_row)
-    except EmailError as exc:
-        logger.warning("reminder smtp load failed tenant=%s: %s", job.tenant_id, exc)
-        return ok
-
-    app_settings = get_settings()
-    tenant = db.get(Tenant, job.tenant_id)
-    cta = app_settings.workspace_equipment_url(
-        tenant.slug if tenant else "",
-        status="overdue",
-    )
-    recipients = _email_recipients(db, job.tenant_id)
-
-    # Group equipment by window kind
+    # Group equipment by window kind (shared by in-app summary + email digest)
     by_kind: dict[str, list[EquipmentCache]] = {k: [] for _, _, k in DUE_WINDOWS}
     by_kind["overdue_daily"] = []
     for eq in equipment:
@@ -428,101 +428,162 @@ def _process_daily(
                     by_kind[kind_name].append(eq)
                     break
 
-    window_labels = {
-        "due_30": "30 days",
-        "due_14": "14 days",
-        "due_7": "7 days",
-        "due_1": "1 day / due today",
-    }
+    overdue_eq = by_kind["overdue_daily"]
+    due_1 = by_kind.get("due_1") or []
+    due_7 = by_kind.get("due_7") or []
+    due_14 = by_kind.get("due_14") or []
+    due_30 = by_kind.get("due_30") or []
+    has_items = bool(overdue_eq or due_1 or due_7 or due_14 or due_30)
 
-    for recipient in recipients:
-        # Overdue batch
-        overdue_eq = by_kind["overdue_daily"]
+    if has_items:
+        parts: list[str] = []
         if overdue_eq:
-            claimed_rows: list[ReminderDispatch] = []
-            items: list[OverdueEquipmentRow] = []
-            for eq in overdue_eq:
-                period_key = f"{eq.public_id}:{local_today.isoformat()}"
-                disp = _try_claim_dispatch(
-                    db,
-                    tenant_id=job.tenant_id,
-                    kind="overdue_daily",
-                    period_key=period_key,
-                    recipient_key=recipient.key,
-                    channel=CHANNEL_EMAIL,
-                    equipment_public_id=eq.public_id,
-                )
-                if disp is not None:
-                    claimed_rows.append(disp)
-                    items.append(_row_from_eq(eq, local_today, overdue=True))  # type: ignore[arg-type]
-            if items:
-                try:
-                    send_overdue_alert_email(
-                        config,
-                        to_email=recipient.email,
-                        to_name=recipient.name,
-                        items=items,  # type: ignore[arg-type]
-                        cta_url=cta,
-                    )
-                    for d in claimed_rows:
-                        _mark_dispatch_sent(d, now_utc)
-                except Exception as exc:  # noqa: BLE001
-                    err = str(exc)
-                    ok = False
-                    logger.warning(
-                        "overdue email failed tenant=%s to=%s: %s",
-                        job.tenant_id,
-                        recipient.email,
-                        err,
-                    )
-                    for d in claimed_rows:
-                        _mark_dispatch_failed(d, err)
+            parts.append(f"{len(overdue_eq)} overdue")
+        if due_1:
+            parts.append(f"{len(due_1)} due today/tomorrow")
+        if due_7:
+            parts.append(f"{len(due_7)} due in 7 days")
+        if due_14:
+            parts.append(f"{len(due_14)} due in 14 days")
+        if due_30:
+            parts.append(f"{len(due_30)} due in 30 days")
+        upsert_notification(
+            db,
+            tenant_id=job.tenant_id,
+            source_key=f"daily-digest-{local_today.isoformat()}",
+            title="Daily calibration digest",
+            body=f"{', '.join(parts)}.",
+            type_="reminder",
+            event_date=local_today.isoformat(),
+            commit=False,
+        )
 
-        for kind_name, label in window_labels.items():
-            eqs = by_kind.get(kind_name) or []
-            if not eqs:
-                continue
-            claimed_rows = []
-            items_due: list[ReminderEquipmentRow] = []
-            for eq in eqs:
-                next_iso = (eq.next_calibration or local_today).isoformat()
-                period_key = f"{eq.public_id}:{next_iso}"
-                disp = _try_claim_dispatch(
-                    db,
+    if not smtp_configured(settings_row) or not has_items:
+        return ok
+
+    try:
+        config = load_smtp_config(settings_row)
+    except EmailError as exc:
+        logger.warning("reminder smtp load failed tenant=%s: %s", job.tenant_id, exc)
+        return ok
+
+    app_settings = get_settings()
+    tenant = db.get(Tenant, job.tenant_id)
+    cta = app_settings.workspace_equipment_url(
+        tenant.slug if tenant else "",
+        status="overdue",
+    )
+    prefs_url = (
+        f"{app_settings.app_public_url.rstrip('/')}/workspace/{tenant.slug}/profile"
+        if tenant and tenant.slug
+        else app_settings.app_public_url
+    )
+    org_name = (
+        (settings_row.company_name or "").strip()
+        or (tenant.name if tenant else "")
+        or "Your organization"
+    )
+    org_fmt = org_defaults_from_row(settings_row)
+    date_fmt = org_fmt["date_format"]
+    recipients = _email_recipients(db, job.tenant_id)
+
+    period_key = local_today.isoformat()
+    total_items = (
+        len(overdue_eq) + len(due_1) + len(due_7) + len(due_14) + len(due_30)
+    )
+    for recipient in recipients:
+        # Dedup: one digest per recipient per local day
+        disp = _try_claim_dispatch(
+            db,
+            tenant_id=job.tenant_id,
+            kind="daily_digest",
+            period_key=period_key,
+            recipient_key=recipient.key,
+            channel=CHANNEL_EMAIL,
+        )
+        if disp is None:
+            continue
+
+        overdue_items = [
+            _row_from_eq(eq, local_today, overdue=True, date_format=date_fmt)  # type: ignore[misc]
+            for eq in overdue_eq
+        ]
+        due_1_items = [
+            _row_from_eq(eq, local_today, overdue=False, date_format=date_fmt)  # type: ignore[misc]
+            for eq in due_1
+        ]
+        due_7_items = [
+            _row_from_eq(eq, local_today, overdue=False, date_format=date_fmt)  # type: ignore[misc]
+            for eq in due_7
+        ]
+        due_14_items = [
+            _row_from_eq(eq, local_today, overdue=False, date_format=date_fmt)  # type: ignore[misc]
+            for eq in due_14
+        ]
+        due_30_items = [
+            _row_from_eq(eq, local_today, overdue=False, date_format=date_fmt)  # type: ignore[misc]
+            for eq in due_30
+        ]
+        subject = (
+            f"TrueGage — Daily calibration digest "
+            f"({total_items} item{'s' if total_items != 1 else ''})"
+        )
+        try:
+            send_daily_digest_email(
+                config,
+                to_email=recipient.email,
+                to_name=recipient.name,
+                overdue_items=overdue_items,  # type: ignore[arg-type]
+                due_1_items=due_1_items,  # type: ignore[arg-type]
+                due_7_items=due_7_items,  # type: ignore[arg-type]
+                due_14_items=due_14_items,  # type: ignore[arg-type]
+                due_30_items=due_30_items,  # type: ignore[arg-type]
+                cta_url=cta,
+                org_name=org_name,
+                preferences_url=prefs_url,
+                allow_user_channel_toggle=bool(
+                    getattr(settings_row, "allow_user_channel_toggle", True)
+                ),
+            )
+            _mark_dispatch_sent(disp, now_utc)
+            db.add(
+                EmailAuditLog(
                     tenant_id=job.tenant_id,
-                    kind=kind_name,
-                    period_key=period_key,
-                    recipient_key=recipient.key,
-                    channel=CHANNEL_EMAIL,
-                    equipment_public_id=eq.public_id,
+                    kind="daily_digest",
+                    subject=subject,
+                    to_email=recipient.email,
+                    to_name=recipient.name or "",
+                    status="sent",
+                    error=None,
+                    equipment_count=total_items,
+                    detail=f"local_date={period_key}",
+                    org_member=recipient.key.startswith("user:"),
                 )
-                if disp is not None:
-                    claimed_rows.append(disp)
-                    items_due.append(_row_from_eq(eq, local_today, overdue=False))  # type: ignore[arg-type]
-            if items_due:
-                try:
-                    send_due_reminder_email(
-                        config,
-                        to_email=recipient.email,
-                        to_name=recipient.name,
-                        window_label=label,
-                        items=items_due,
-                        cta_url=cta,
-                    )
-                    for d in claimed_rows:
-                        _mark_dispatch_sent(d, now_utc)
-                except Exception as exc:  # noqa: BLE001
-                    err = str(exc)
-                    ok = False
-                    logger.warning(
-                        "due email failed tenant=%s kind=%s to=%s: %s",
-                        job.tenant_id,
-                        kind_name,
-                        recipient.email,
-                        err,
-                    )
-                    for d in claimed_rows:
-                        _mark_dispatch_failed(d, err)
+            )
+        except Exception as exc:  # noqa: BLE001
+            err = str(exc)
+            ok = False
+            logger.warning(
+                "digest email failed tenant=%s to=%s: %s",
+                job.tenant_id,
+                recipient.email,
+                err,
+            )
+            _mark_dispatch_failed(disp, err)
+            db.add(
+                EmailAuditLog(
+                    tenant_id=job.tenant_id,
+                    kind="daily_digest",
+                    subject=subject,
+                    to_email=recipient.email,
+                    to_name=recipient.name or "",
+                    status="failed",
+                    error=err[:2000],
+                    equipment_count=total_items,
+                    detail=f"local_date={period_key}",
+                    org_member=recipient.key.startswith("user:"),
+                )
+            )
     return ok
 
 
@@ -540,17 +601,17 @@ def _process_weekly(
     iso = local_today.isocalendar()
     week_key = f"{iso.year}-W{iso.week:02d}"
     equipment = _active_equipment(db, job.tenant_id, local_today)
+    date_fmt = org_defaults_from_row(settings_row)["date_format"]
     upcoming: list[ReminderEquipmentRow] = []
     for eq in equipment:
         days = _days_until(eq, local_today)
         if days is None:
             continue
         if 7 <= days <= 30:
-            upcoming.append(_row_from_eq(eq, local_today, overdue=False))  # type: ignore[arg-type]
+            upcoming.append(
+                _row_from_eq(eq, local_today, overdue=False, date_format=date_fmt)  # type: ignore[arg-type]
+            )
     upcoming.sort(key=lambda r: (r.days_until, r.name.lower()))
-
-    # Shared in-app digest notification
-    from app.services.notifications import upsert_notification
 
     upsert_notification(
         db,
@@ -593,6 +654,7 @@ def _process_weekly(
         )
         if disp is None:
             continue
+        subject = f"TrueGage — Weekly digest ({week_key}): {len(upcoming)} upcoming"
         try:
             send_weekly_digest_email(
                 config,
@@ -603,9 +665,38 @@ def _process_weekly(
                 cta_url=cta,
             )
             _mark_dispatch_sent(disp, now_utc)
+            db.add(
+                EmailAuditLog(
+                    tenant_id=job.tenant_id,
+                    kind="weekly_digest",
+                    subject=subject,
+                    to_email=recipient.email,
+                    to_name=recipient.name or "",
+                    status="sent",
+                    error=None,
+                    equipment_count=len(upcoming),
+                    detail=f"week={week_key}",
+                    org_member=recipient.key.startswith("user:"),
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             ok = False
-            _mark_dispatch_failed(disp, str(exc))
+            err = str(exc)
+            _mark_dispatch_failed(disp, err)
+            db.add(
+                EmailAuditLog(
+                    tenant_id=job.tenant_id,
+                    kind="weekly_digest",
+                    subject=subject,
+                    to_email=recipient.email,
+                    to_name=recipient.name or "",
+                    status="failed",
+                    error=err[:2000],
+                    equipment_count=len(upcoming),
+                    detail=f"week={week_key}",
+                    org_member=recipient.key.startswith("user:"),
+                )
+            )
     return ok
 
 

@@ -328,8 +328,9 @@
     transform: translateY(10px);
   }
   to {
+    /* `transform: none` so fixed children (e.g. shop-floor bars) stay viewport-fixed */
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 

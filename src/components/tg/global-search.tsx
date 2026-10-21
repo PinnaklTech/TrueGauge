@@ -6,6 +6,7 @@ import {
   FileCheck2,
   LayoutDashboard,
   Loader2,
+  ScanLine,
   Search,
   Settings,
   User as UserIcon,
@@ -25,11 +26,13 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   listCertificates,
   listEquipment,
+  resolveScanCode,
   type AppCertificate,
 } from "@/lib/api";
 import type { Equipment } from "@/lib/mock-data";
 import { canAccessSettings } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const RESULT_LIMIT = 8;
 const MIN_QUERY = 2;
@@ -38,6 +41,7 @@ const DEBOUNCE_MS = 250;
 type GoToKey =
   | "dashboard"
   | "equipment"
+  | "scan"
   | "calibrations"
   | "certificates"
   | "reports"
@@ -52,6 +56,7 @@ const GO_TO: {
 }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "equipment", label: "Equipment", icon: Wrench },
+  { key: "scan", label: "Scan", icon: ScanLine },
   { key: "calibrations", label: "Calibrations", icon: CalendarClock },
   { key: "certificates", label: "Certificates", icon: FileCheck2 },
   { key: "reports", label: "Reports & Compliance", icon: BarChart3 },
@@ -155,6 +160,38 @@ export function GlobalSearch({
     return () => window.clearTimeout(timer);
   }, [query, open, storageEnabled]);
 
+  const resolveCode = useCallback(
+    async (code: string) => {
+      const trimmed = code.trim();
+      if (!trimmed || !workspaceSlug) return;
+      close();
+      try {
+        const result = await resolveScanCode(trimmed);
+        if (result.equipment) {
+          toast.success(`Opened ${result.equipment.tag || result.equipment.name}`);
+          void navigate({
+            to: "/workspace/$slug/equipment/$id",
+            params: { slug: workspaceSlug, id: result.equipment.id },
+            search: { from: "scan" },
+          });
+          return;
+        }
+        if (result.matches && result.matches.length === 1) {
+          void navigate({
+            to: "/workspace/$slug/equipment/$id",
+            params: { slug: workspaceSlug, id: result.matches[0].id },
+            search: { from: "scan" },
+          });
+          return;
+        }
+        toast.error("Code not recognized");
+      } catch {
+        toast.error("Code not recognized");
+      }
+    },
+    [close, navigate, workspaceSlug],
+  );
+
   const goTo = useCallback(
     (key: GoToKey) => {
       close();
@@ -165,6 +202,9 @@ export function GlobalSearch({
           break;
         case "equipment":
           void navigate({ to: "/workspace/$slug/equipment", params: { slug } });
+          break;
+        case "scan":
+          void navigate({ to: "/workspace/$slug/scan", params: { slug } });
           break;
         case "calibrations":
           void navigate({ to: "/workspace/$slug/calibrations", params: { slug } });
@@ -246,10 +286,10 @@ export function GlobalSearch({
       <button
         type="button"
         onClick={openSearch}
-        className="tg-focus-ring inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted md:hidden"
+        className="tg-focus-ring inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted md:hidden"
         aria-label="Search workspace"
       >
-        <Search className="h-4 w-4" />
+        <Search className="h-5 w-5" />
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -262,9 +302,22 @@ export function GlobalSearch({
           </DialogTitle>
           <Command shouldFilter={false} className="rounded-lg border-0">
             <CommandInput
-              placeholder="Search equipment, certificates…"
+              placeholder="Search or paste QR URL / tag / serial…"
               value={query}
               onValueChange={setQuery}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && query.trim().length >= 3) {
+                  // Hardware wedge / paste: resolve through same scan API
+                  const looksLikeCode =
+                    /\/q\//i.test(query) ||
+                    /^[0-9a-z]{8,16}$/i.test(query.trim()) ||
+                    query.trim().length >= 3;
+                  if (looksLikeCode && equipment.length === 0 && !loading) {
+                    e.preventDefault();
+                    void resolveCode(query);
+                  }
+                }
+              }}
             />
             <CommandList>
               {loading ? (
@@ -291,6 +344,18 @@ export function GlobalSearch({
                       </CommandItem>
                     );
                   })}
+                </CommandGroup>
+              ) : null}
+
+              {searching && query.trim().length >= 3 ? (
+                <CommandGroup heading="Scan">
+                  <CommandItem
+                    value={`resolve-${query}`}
+                    onSelect={() => void resolveCode(query)}
+                  >
+                    <ScanLine className="text-muted-foreground" />
+                    <span>Open code “{query.trim()}”</span>
+                  </CommandItem>
                 </CommandGroup>
               ) : null}
 

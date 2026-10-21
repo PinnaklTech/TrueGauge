@@ -21,6 +21,7 @@ import {
   updateTenantOrg,
   updateTenantUser,
 } from "@/lib/api";
+import { PASSWORD_MAX_LEN, PASSWORD_MIN_LEN, PASSWORD_POLICY_HINT, passwordPolicyError } from "@/lib/password-policy";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -41,12 +42,14 @@ function formatStorageBytes(bytes: number) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 function genTempPassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
-  let out = "";
-  const bytes = new Uint8Array(16);
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const specials = "!@#$%&*";
+  const bytes = new Uint8Array(11);
   crypto.getRandomValues(bytes);
-  for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
-  return out + "Aa1!";
+  let out = "";
+  for (let i = 0; i < 10; i++) out += alphabet[bytes[i] % alphabet.length];
+  out += specials[bytes[10] % specials.length];
+  return out;
 }
 
 export function CompanyDetailPage() {
@@ -825,9 +828,12 @@ function MembersTab({
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
-              if (cPassword.length < 12) {
-                setFormError("Password must be at least 12 characters");
-                return;
+              {
+                const pwErr = passwordPolicyError(cPassword);
+                if (pwErr) {
+                  setFormError(pwErr);
+                  return;
+                }
               }
               createMut.mutate();
             }}
@@ -853,12 +859,14 @@ function MembersTab({
               </select>
             </div>
             <div className="field">
-              <label>Temporary password</label>
+              <label>Temporary password ({PASSWORD_POLICY_HINT})</label>
               <input
                 className="mono"
                 value={cPassword}
-                onChange={(e) => setCPassword(e.target.value)}
+                onChange={(e) => setCPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 required
+                minLength={PASSWORD_MIN_LEN}
+                maxLength={PASSWORD_MAX_LEN}
               />
             </div>
             <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -968,7 +976,7 @@ function PasswordDialog({
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
-          if (password.length < 12) return;
+          if (passwordPolicyError(password)) return;
           onSubmit();
         }}
       >
@@ -976,13 +984,14 @@ function PasswordDialog({
         <p>{subtitle}</p>
         {error && <p className="error">{error}</p>}
         <div className="field">
-          <label>Temporary password (min 12)</label>
+          <label>Temporary password ({PASSWORD_POLICY_HINT})</label>
           <input
             className="mono"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
             required
-            minLength={12}
+            minLength={PASSWORD_MIN_LEN}
+            maxLength={PASSWORD_MAX_LEN}
           />
           <button
             type="button"
@@ -1256,6 +1265,11 @@ function EmailTab({
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
+              const pwErr = passwordPolicyError(password);
+              if (pwErr) {
+                setErr(pwErr);
+                return;
+              }
               mut.mutate();
             }}
           >
@@ -1278,13 +1292,14 @@ function EmailTab({
               </select>
             </div>
             <div className="field">
-              <label>New temporary password</label>
+              <label>New temporary password ({PASSWORD_POLICY_HINT})</label>
               <input
                 className="mono"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 required
-                minLength={12}
+                minLength={PASSWORD_MIN_LEN}
+                maxLength={PASSWORD_MAX_LEN}
               />
             </div>
             <div className="row" style={{ justifyContent: "flex-end" }}>

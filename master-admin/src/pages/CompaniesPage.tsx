@@ -2,14 +2,22 @@ import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { APP_URL, createTenant, listTenants } from "@/lib/api";
+import {
+  PASSWORD_MAX_LEN,
+  PASSWORD_MIN_LEN,
+  PASSWORD_POLICY_HINT,
+  passwordPolicyError,
+} from "@/lib/password-policy";
 
 function genTempPassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
-  let out = "";
-  const bytes = new Uint8Array(16);
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const specials = "!@#$%&*";
+  const bytes = new Uint8Array(11);
   crypto.getRandomValues(bytes);
-  for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
-  return out + "Aa1!";
+  let out = "";
+  for (let i = 0; i < 10; i++) out += alphabet[bytes[i] % alphabet.length];
+  out += specials[bytes[10] % specials.length];
+  return out;
 }
 
 export function CompaniesPage() {
@@ -90,9 +98,12 @@ export function CompaniesPage() {
       setFormError("Company admin email and password are required");
       return;
     }
-    if (adminPassword.length < 12) {
-      setFormError("Admin password must be at least 12 characters");
-      return;
+    {
+      const pwErr = passwordPolicyError(adminPassword, "Admin password");
+      if (pwErr) {
+        setFormError(pwErr);
+        return;
+      }
     }
     createMut.mutate({
       name: name.trim(),
@@ -287,14 +298,16 @@ export function CompaniesPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="co-admin-pw">Temporary password (min 12)</label>
+              <label htmlFor="co-admin-pw">Temporary password ({PASSWORD_POLICY_HINT})</label>
               <input
                 id="co-admin-pw"
                 type="text"
                 className="mono"
                 value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
+                onChange={(e) => setAdminPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 required
+                minLength={PASSWORD_MIN_LEN}
+                maxLength={PASSWORD_MAX_LEN}
               />
               <button
                 type="button"

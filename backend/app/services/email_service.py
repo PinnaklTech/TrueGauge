@@ -621,6 +621,183 @@ def send_due_reminder_email(
     send_message(config, msg)
 
 
+def send_daily_digest_email(
+    config: SmtpConfig,
+    *,
+    to_email: str,
+    to_name: str,
+    overdue_items: list[OverdueEquipmentRow],
+    due_1_items: list[ReminderEquipmentRow],
+    due_7_items: list[ReminderEquipmentRow],
+    due_14_items: list[ReminderEquipmentRow],
+    due_30_items: list[ReminderEquipmentRow],
+    cta_url: str,
+    org_name: str = "",
+    preferences_url: str = "",
+    allow_user_channel_toggle: bool = True,
+) -> None:
+    """One digest email with overdue / 1d / 7d / 14d / 30d sections."""
+    sections: list[tuple[str, list]] = [
+        ("Overdue", overdue_items),
+        ("Due in 1 day / today", due_1_items),
+        ("Due in 7 days", due_7_items),
+        ("Due in 14 days", due_14_items),
+        ("Due in 30 days", due_30_items),
+    ]
+    total = sum(len(items) for _, items in sections)
+    if total == 0:
+        raise EmailError("No equipment to include in the digest email")
+
+    name = to_name.strip() or "there"
+    safe_name = _escape(name)
+    safe_cta = _escape(cta_url)
+    safe_org = _escape((org_name or "Your organization").strip() or "Your organization")
+    safe_prefs = _escape(preferences_url or cta_url)
+    subject = f"TrueGage — Daily calibration digest ({total} item{'s' if total != 1 else ''})"
+
+    lines = [
+        f"Hi {name},",
+        "",
+        f"Your daily calibration digest from {org_name or 'TrueGage'} ({total} item{'s' if total != 1 else ''}):",
+        "",
+    ]
+    for title, items in sections:
+        if not items:
+            continue
+        lines.append(f"{title}:")
+        for row in items:
+            if isinstance(row, OverdueEquipmentRow):
+                lines.append(
+                    f"  • {row.name} ({row.tag}) — due {row.due_date} ({row.days_overdue}d overdue)"
+                )
+            else:
+                lines.append(
+                    f"  • {row.name} ({row.tag}) — due {row.due_date} ({row.days_until}d)"
+                )
+        lines.append("")
+    lines.extend(
+        [
+            f"Open TrueGage: {cta_url}",
+            "",
+        ]
+    )
+    if allow_user_channel_toggle and preferences_url:
+        lines.append(f"Manage reminder preferences: {preferences_url}")
+    else:
+        lines.append(
+            f"You received this because you are a notification recipient for {org_name or 'your organization'}."
+        )
+    lines.extend(["", f"— {org_name or 'TrueGage'}"])
+    text = "\n".join(lines)
+
+    sections_html = ""
+    for title, items in sections:
+        if not items:
+            continue
+        rows_html = ""
+        for row in items:
+            if isinstance(row, OverdueEquipmentRow):
+                badge = f'{row.days_overdue}d overdue'
+                badge_style = "color:#fecaca;background:rgba(239,68,68,0.18);"
+                due = row.due_date
+            else:
+                badge = f"{row.days_until}d"
+                badge_style = "color:#fde68a;background:rgba(245,158,11,0.18);"
+                due = row.due_date
+            rows_html += f"""\
+<tr>
+  <td style="padding:10px 14px;border-bottom:1px solid #243044;font-family:{FONT_SANS};">
+    <div style="font-size:14px;font-weight:600;color:#f8fafc;">{_escape(row.name)}</div>
+    <div style="font-family:{FONT_MONO};font-size:11px;color:#94a3b8;margin-top:4px;">{_escape(row.tag)}</div>
+  </td>
+  <td style="padding:10px 14px;border-bottom:1px solid #243044;font-family:{FONT_MONO};font-size:13px;color:#cbd5e1;">{_escape(due)}</td>
+  <td style="padding:10px 14px;border-bottom:1px solid #243044;text-align:right;">
+    <span style="display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:4px 8px;{badge_style}">{badge}</span>
+  </td>
+</tr>
+"""
+        sections_html += f"""\
+<div style="margin-bottom:18px;">
+  <div style="font-family:{FONT_SANS};font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#94a3b8;margin-bottom:8px;">
+    {_escape(title)} ({len(items)})
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #243044;border-radius:10px;overflow:hidden;">
+    {rows_html}
+  </table>
+</div>
+"""
+
+    footer_note = (
+        f'<a href="{safe_prefs}" style="color:#5eead4;">Manage reminder preferences</a>'
+        if allow_user_channel_toggle and preferences_url
+        else f"You received this as a notification recipient for {safe_org}."
+    )
+
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily calibration digest</title>
+{FONT_LINKS}
+</head>
+<body style="margin:0;padding:0;background:#0b1220;font-family:{FONT_SANS};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0b1220;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#111827;border:1px solid #1f2a3c;border-radius:14px;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f766e 0%,#115e59 55%,#0b3f3a 100%);padding:28px;">
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:rgba(255,255,255,0.72);">
+                TrueGage · Daily digest
+              </div>
+              <div style="font-family:{FONT_DISPLAY};font-size:22px;line-height:1.25;color:#ffffff;margin-top:10px;font-weight:600;">
+                {total} calibration{'s' if total != 1 else ''} need attention
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#e5e7eb;">Hi {safe_name},</p>
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#cbd5e1;">
+                Here is today's calibration digest for {safe_org}.
+              </p>
+              {sections_html}
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+                <tr>
+                  <td style="border-radius:10px;background:#0f766e;">
+                    <a href="{safe_cta}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;padding:12px 22px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      View equipment
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <div style="margin-top:22px;font-size:12px;line-height:1.5;color:#64748b;">
+                {footer_note}<br/>
+                Sent by {safe_org} via TrueGage.
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+    msg = build_message(
+        config=config,
+        to_email=to_email,
+        to_name=to_name,
+        subject=subject,
+        text_body=text,
+        html_body=html,
+    )
+    send_message(config, msg)
+
+
 def send_weekly_digest_email(
     config: SmtpConfig,
     *,

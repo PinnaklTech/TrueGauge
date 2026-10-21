@@ -1,6 +1,12 @@
 import { completeProductTour } from "@/lib/api";
 
-export type TourRoute = "dashboard" | "equipment" | "calibrations" | "certificates";
+export type TourRoute =
+  | "dashboard"
+  | "equipment"
+  | "calibrations"
+  | "certificates"
+  | "reports"
+  | "notifications";
 
 export type TourCallbacks = {
   onExpandSidebar?: () => void;
@@ -153,28 +159,37 @@ export function stopProductTourUi(): void {
 
 /**
  * Writer tour (includeLists):
- * 0 welcome, 1 sidebar, 2 equipment nav,
- * 3 lists btn → 4 lists dialog,
- * 5 add-equipment btn → 6 add form,
- * 7 calibrations nav → 8 cal tabs → 9 log form → 10 cal schedules,
- * 11 certificates nav → 12 certificate upload,
- * 13 dash cards, 14 account
+ * 0 welcome, 1 sidebar, 2 scan, 3 equipment nav,
+ * 4 print labels, 5 import/export,
+ * 6 lists btn → 7 lists dialog,
+ * 8 add-equipment btn → 9 add form,
+ * 10 calibrations nav → 11 cal tabs → 12 log form → 13 cal schedules,
+ * 14 certificates nav → 15 certificate upload,
+ * 16 reports nav → 17 reports generate,
+ * 18 notifications nav → 19 notifications inbox,
+ * 20 dash cards, 21 account
  *
  * Member tour:
- * 0 welcome, 1 sidebar, 2 equipment nav, 3 cal nav,
- * 4 cal tabs, 5 cal schedules,
- * 6 certificates nav → 7 certificate vault,
- * 8 dash cards, 9 account
+ * 0 welcome, 1 sidebar, 2 scan, 3 equipment nav,
+ * 4 cal nav → 5 cal tabs → 6 cal schedules,
+ * 7 certificates nav → 8 certificate vault,
+ * 9 reports nav → 10 reports generate,
+ * 11 notifications nav → 12 notifications inbox,
+ * 13 dash cards, 14 account
  */
 export function pathForTourStep(step: number, includeLists: boolean): TourRoute {
   if (includeLists) {
-    if (step >= 3 && step <= 7) return "equipment";
-    if (step >= 8 && step <= 11) return "calibrations";
-    if (step === 12) return "certificates";
+    if (step >= 4 && step <= 9) return "equipment";
+    if (step >= 11 && step <= 13) return "calibrations";
+    if (step === 15) return "certificates";
+    if (step === 17) return "reports";
+    if (step === 19) return "notifications";
     return "dashboard";
   }
-  if (step >= 4 && step <= 6) return "calibrations";
-  if (step === 7) return "certificates";
+  if (step >= 5 && step <= 6) return "calibrations";
+  if (step === 8) return "certificates";
+  if (step === 10) return "reports";
+  if (step === 12) return "notifications";
   return "dashboard";
 }
 
@@ -192,11 +207,13 @@ function normalizeTourPath(pathname: string): TourRoute {
   if (p.includes("/equipment")) return "equipment";
   if (p.includes("/calibrations")) return "calibrations";
   if (p.includes("/certificates")) return "certificates";
+  if (p.includes("/reports")) return "reports";
+  if (p.includes("/notifications")) return "notifications";
   return "dashboard";
 }
 
 /**
- * Back navigation — never opens dialogs or visits Equipment/Calibrations pages.
+ * Back navigation — never opens dialogs or visits heavy pages.
  * Skips heavy steps so Back stays lag-free.
  */
 async function backLight(
@@ -210,25 +227,27 @@ async function backLight(
 
   if (includeLists) {
     // Skip dialog-only steps when reversing
-    if (fromStep === 6) target = 5; // form → Add Equipment button
-    else if (fromStep === 5) target = 3; // add btn → Lists button (skip lists dialog)
-    else if (fromStep === 4) target = 3; // lists dialog → Lists button
-    else if (fromStep === 7) target = 5; // cal nav → Add Equipment button (no form)
-    // Leaving calibrations / certificates / dashboard: skip heavy pages
-    else if (fromStep >= 8 && fromStep <= 13) target = 2;
+    if (fromStep === 9) target = 8; // form → Add Equipment button
+    else if (fromStep === 8) target = 6; // add btn → Lists button (skip lists dialog)
+    else if (fromStep === 7) target = 6; // lists dialog → Lists button
+    else if (fromStep === 10) target = 8; // cal nav → Add Equipment button (no form)
+    // Leaving calibrations / certificates / reports / notifications / dash: skip heavy pages
+    else if (fromStep >= 11 && fromStep <= 20) target = 3;
   } else {
-    // Member: leaving cal / certificates / dash → dashboard nav
-    if (fromStep >= 4 && fromStep <= 8) target = 2;
+    // Member: leaving cal / certificates / reports / notifications / dash → equipment nav
+    if (fromStep >= 4 && fromStep <= 13) target = 3;
   }
 
   const targetPath = pathForTourStep(target, includeLists);
   const current = normalizeTourPath(window.location.pathname);
 
-  // Never navigate into equipment/calibrations/certificates while going back
+  // Never navigate into heavy pages while going back
   if (
     targetPath === "equipment" ||
     targetPath === "calibrations" ||
-    targetPath === "certificates"
+    targetPath === "certificates" ||
+    targetPath === "reports" ||
+    targetPath === "notifications"
   ) {
     if (current === targetPath) {
       saveStep(target);
@@ -255,7 +274,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
       popover: {
         title: "Welcome to TrueGage",
         description:
-          "A quick tour of your workspace. Skip for now pauses — you can resume anytime from the top bar.",
+          "A quick tour of Scan, equipment, reports, reminders, and more. Skip for now pauses — resume anytime from the top bar.",
         align: "center",
       },
     },
@@ -263,9 +282,20 @@ function buildSteps(includeLists: boolean): TourStep[] {
       element: '[data-tour="nav-sidebar"]',
       popover: {
         title: "Navigation",
-        description: "Move between Dashboard, Equipment, Calibrations, Certificates, and more from this sidebar.",
+        description:
+          "Move between Dashboard, Equipment, Calibrations, Certificates, Reports, and Notifications from this sidebar.",
         side: "right",
         align: "start",
+      },
+    },
+    {
+      element: '[data-tour="nav-scan"]',
+      popover: {
+        title: "Scan",
+        description:
+          "Open the camera or paste a QR code from a printed label to jump straight to that gauge — no hunting in the list.",
+        side: "bottom",
+        align: "end",
       },
     },
     {
@@ -273,13 +303,13 @@ function buildSteps(includeLists: boolean): TourStep[] {
       popover: {
         title: "Equipment",
         description: includeLists
-          ? "Your gauge register lives here. Next we’ll peek at Lists and adding equipment."
-          : "Browse gauges and instruments, check due dates, and open a record for full history.",
+          ? "Your gauge register lives here — print QR labels, import or export CSV, manage Lists, and add equipment."
+          : "Browse gauges and instruments, check due dates, and open a record for full history. Pair with Scan for floor lookups.",
         side: "right",
         align: "start",
         onNextClick: includeLists
           ? async () => {
-              await handoffToStep(3, "equipment");
+              await handoffToStep(4, "equipment");
             }
           : undefined,
       },
@@ -288,6 +318,32 @@ function buildSteps(includeLists: boolean): TourStep[] {
 
   if (includeLists) {
     steps.push(
+      {
+        element: '[data-tour="equipment-print-labels"]',
+        popover: {
+          title: "Print QR labels",
+          description:
+            "Select gauges, then print QR labels for the shop floor. Scanning a label opens that equipment record.",
+          side: "bottom",
+          align: "end",
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(4, true, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="equipment-import-export"]',
+        popover: {
+          title: "Import / Export",
+          description:
+            "Bootstrap or back up your register with CSV — import new rows or export the current list.",
+          side: "bottom",
+          align: "end",
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(5, true, drv);
+          },
+        },
+      },
       {
         element: '[data-tour="equipment-lists"]',
         popover: {
@@ -304,7 +360,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
             drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(3, true, drv);
+            await backLight(6, true, drv);
           },
         },
       },
@@ -323,7 +379,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
             drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(4, true, drv);
+            await backLight(7, true, drv);
           },
         },
       },
@@ -343,7 +399,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
             drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(5, true, drv);
+            await backLight(8, true, drv);
           },
         },
       },
@@ -362,7 +418,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
             drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(6, true, drv);
+            await backLight(9, true, drv);
           },
         },
       },
@@ -375,10 +431,10 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "right",
           align: "start",
           onNextClick: async () => {
-            await handoffToStep(8, "calibrations");
+            await handoffToStep(11, "calibrations");
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(7, true, drv);
+            await backLight(10, true, drv);
           },
         },
       },
@@ -402,7 +458,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
             drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(8, true, drv);
+            await backLight(11, true, drv);
           },
         },
       },
@@ -428,7 +484,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
           onPrevClick: async (_el, _step, { driver: drv }) => {
             window.dispatchEvent(new Event("tg-tour-close-cal-log"));
             await delay(160);
-            await backLight(9, true, drv);
+            await backLight(12, true, drv);
           },
         },
       },
@@ -441,7 +497,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "top",
           align: "start",
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(10, true, drv);
+            await backLight(13, true, drv);
           },
         },
       },
@@ -454,15 +510,14 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "right",
           align: "start",
           onNextClick: async () => {
-            await handoffToStep(12, "certificates");
+            await handoffToStep(15, "certificates");
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(11, true, drv);
+            await backLight(14, true, drv);
           },
         },
       },
       {
-        // Must be a single selector — comma lists use document order and hit the page heading first.
         element: '[data-tour="certificates-upload"]',
         popover: {
           title: "Upload a certificate",
@@ -470,11 +525,75 @@ function buildSteps(includeLists: boolean): TourStep[] {
             "Drop a PDF here (max 2 MB). After you pick a file, you’ll choose which equipment it belongs to — search by tag or name, then upload & link.",
           side: "bottom",
           align: "center",
-          onNextClick: async () => {
-            await handoffToStep(13, "dashboard");
+          onNextClick: async (_el, _step, { driver: drv }) => {
+            drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(12, true, drv);
+            await backLight(15, true, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="nav-reports"]',
+        popover: {
+          title: "Reports",
+          description:
+            "Generate audit-ready PDF summaries — compliance, inventory, overdue, or due soon. Next opens Reports.",
+          side: "right",
+          align: "start",
+          onNextClick: async () => {
+            await handoffToStep(17, "reports");
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(16, true, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="reports-generate"]',
+        popover: {
+          title: "Generate a PDF",
+          description:
+            "Pick a report type and download a branded PDF. The last few downloads stay under Previously generated for quick re-download.",
+          side: "top",
+          align: "start",
+          onNextClick: async (_el, _step, { driver: drv }) => {
+            drv.moveNext();
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(17, true, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="nav-notifications"]',
+        popover: {
+          title: "Notifications",
+          description:
+            "Due and overdue reminders land here. Next opens your inbox.",
+          side: "right",
+          align: "start",
+          onNextClick: async () => {
+            await handoffToStep(19, "notifications");
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(18, true, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="notifications-inbox"]',
+        popover: {
+          title: "Your inbox",
+          description:
+            "Read and clear in-app alerts. Email reminders follow your Profile prefs when your org allows them.",
+          side: "top",
+          align: "start",
+          onNextClick: async () => {
+            await handoffToStep(20, "dashboard");
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(19, true, drv);
           },
         },
       },
@@ -489,10 +608,10 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "right",
           align: "start",
           onNextClick: async () => {
-            await handoffToStep(4, "calibrations");
+            await handoffToStep(5, "calibrations");
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(3, false, drv);
+            await backLight(4, false, drv);
           },
         },
       },
@@ -504,7 +623,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "bottom",
           align: "end",
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(4, false, drv);
+            await backLight(5, false, drv);
           },
         },
       },
@@ -517,7 +636,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "top",
           align: "start",
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(5, false, drv);
+            await backLight(6, false, drv);
           },
         },
       },
@@ -530,15 +649,14 @@ function buildSteps(includeLists: boolean): TourStep[] {
           side: "right",
           align: "start",
           onNextClick: async () => {
-            await handoffToStep(7, "certificates");
+            await handoffToStep(8, "certificates");
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(6, false, drv);
+            await backLight(7, false, drv);
           },
         },
       },
       {
-        // Single selector — avoid matching the page heading (certificates-intro) above the vault card.
         element: '[data-tour="certificates-vault"]',
         popover: {
           title: "Certificate vault",
@@ -546,11 +664,75 @@ function buildSteps(includeLists: boolean): TourStep[] {
             "Search and open certificates here. Preview, download, and review which gauge each PDF is linked to.",
           side: "bottom",
           align: "center",
-          onNextClick: async () => {
-            await handoffToStep(8, "dashboard");
+          onNextClick: async (_el, _step, { driver: drv }) => {
+            drv.moveNext();
           },
           onPrevClick: async (_el, _step, { driver: drv }) => {
-            await backLight(7, false, drv);
+            await backLight(8, false, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="nav-reports"]',
+        popover: {
+          title: "Reports",
+          description:
+            "Generate or re-download PDF summaries for audits and reviews. Next opens Reports.",
+          side: "right",
+          align: "start",
+          onNextClick: async () => {
+            await handoffToStep(10, "reports");
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(9, false, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="reports-generate"]',
+        popover: {
+          title: "Reports & history",
+          description:
+            "Choose a report type, download the PDF, and re-open recent files from Previously generated.",
+          side: "top",
+          align: "start",
+          onNextClick: async (_el, _step, { driver: drv }) => {
+            drv.moveNext();
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(10, false, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="nav-notifications"]',
+        popover: {
+          title: "Notifications",
+          description:
+            "Due and overdue reminders land here. Next opens your inbox.",
+          side: "right",
+          align: "start",
+          onNextClick: async () => {
+            await handoffToStep(12, "notifications");
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(11, false, drv);
+          },
+        },
+      },
+      {
+        element: '[data-tour="notifications-inbox"]',
+        popover: {
+          title: "Your inbox",
+          description:
+            "Read and clear in-app alerts. Email reminders follow your Profile prefs when your org allows them.",
+          side: "top",
+          align: "start",
+          onNextClick: async () => {
+            await handoffToStep(13, "dashboard");
+          },
+          onPrevClick: async (_el, _step, { driver: drv }) => {
+            await backLight(12, false, drv);
           },
         },
       },
@@ -567,7 +749,7 @@ function buildSteps(includeLists: boolean): TourStep[] {
         side: "bottom",
         align: "center",
         onPrevClick: async (_el, _step, { driver: drv }) => {
-          await backLight(includeLists ? 13 : 8, includeLists, drv);
+          await backLight(includeLists ? 20 : 13, includeLists, drv);
         },
       },
     },
@@ -575,11 +757,12 @@ function buildSteps(includeLists: boolean): TourStep[] {
       element: '[data-tour="account-menu"]',
       popover: {
         title: "Your account",
-        description: "Open Profile anytime for preferences. Click Finish when you’re done.",
+        description:
+          "Open Profile for preferences and reminder opts (when your org allows). Replay this tour anytime from Profile. Click Finish when you’re done.",
         side: "right",
         align: "end",
         onPrevClick: async (_el, _step, { driver: drv }) => {
-          await backLight(includeLists ? 14 : 9, includeLists, drv);
+          await backLight(includeLists ? 21 : 14, includeLists, drv);
         },
       },
     },
@@ -592,13 +775,15 @@ async function prepareStepUi(step: number, includeLists: boolean) {
   const path = pathForTourStep(step, includeLists);
   // Only open dialogs when landing on those exact forward steps — never on Back skips
   if (path === "equipment") {
-    await waitForSelector('[data-tour="equipment-lists"], [data-tour="equipment-add"]');
+    await waitForSelector(
+      '[data-tour="equipment-print-labels"], [data-tour="equipment-add"], [data-tour="equipment-lists"]',
+    );
     closeAllTourDialogs();
-    if (includeLists && step === 4) {
+    if (includeLists && step === 7) {
       openListsDialog();
       await waitForSelector('[data-tour="equipment-lists-dialog"]');
       await delay(280);
-    } else if (includeLists && step === 6) {
+    } else if (includeLists && step === 9) {
       openEquipmentCreate();
       await waitForSelector('[data-tour="equipment-create-dialog"]');
       await delay(280);
@@ -607,7 +792,7 @@ async function prepareStepUi(step: number, includeLists: boolean) {
     window.dispatchEvent(new Event("tg-tour-open-calibrations"));
     await waitForSelector('[data-tour="cal-tabs"]');
     await waitForSelector('[data-tour="cal-schedules"], [data-tour="cal-log-form"]');
-    if (includeLists && step === 9) {
+    if (includeLists && step === 12) {
       window.dispatchEvent(new Event("tg-tour-open-cal-log"));
       await waitForSelector('[data-tour="cal-log-form"]');
       await delay(280);
@@ -615,18 +800,17 @@ async function prepareStepUi(step: number, includeLists: boolean) {
         .querySelector('[data-tour="cal-log-form"]')
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
       await delay(200);
-    } else if ((includeLists && step === 11) || (!includeLists && step === 6)) {
-      window.dispatchEvent(new Event("tg-tour-close-cal-log"));
-      await waitForSelector('[data-tour="nav-certificates"]');
-      await delay(120);
     } else {
       window.dispatchEvent(new Event("tg-tour-close-cal-log"));
-      if (includeLists && step === 10) {
+      if ((includeLists && step === 13) || (!includeLists && step === 6)) {
         await waitForSelector('[data-tour="cal-schedules"]');
+        document
+          .querySelector('[data-tour="cal-schedules"]')
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        await delay(160);
       }
     }
   } else if (path === "certificates") {
-    // Wait for the card below the heading (upload and/or vault) — never the intro title.
     await waitForSelector('[data-tour="certificates-intro"]');
     const card = await waitForSelector(
       '[data-tour="certificates-upload"], [data-tour="certificates-vault"]',
@@ -639,9 +823,21 @@ async function prepareStepUi(step: number, includeLists: boolean) {
       card;
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
     await delay(280);
+  } else if (path === "reports") {
+    await waitForSelector('[data-tour="reports-generate"]');
+    document
+      .querySelector('[data-tour="reports-generate"]')
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    await delay(200);
+  } else if (path === "notifications") {
+    await waitForSelector('[data-tour="notifications-inbox"]');
+    document
+      .querySelector('[data-tour="notifications-inbox"]')
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    await delay(200);
   } else {
-    await waitForSelector('[data-tour="nav-equipment"]');
-    if ((includeLists && step >= 13) || (!includeLists && step >= 8)) {
+    await waitForSelector('[data-tour="nav-equipment"], [data-tour="nav-scan"]');
+    if ((includeLists && step >= 20) || (!includeLists && step >= 13)) {
       await waitForSelector('[data-tour="dash-cards"]');
     }
   }
@@ -678,13 +874,7 @@ export async function startProductTour(cb: StartTourOptions = {}): Promise<void>
 
     const targetPath = pathForTourStep(startAt, includeLists);
     const current = window.location.pathname.replace(/\/$/, "") || "/";
-    const normalize = (p: string): TourRoute => {
-      if (p.includes("/equipment")) return "equipment";
-      if (p.includes("/calibrations")) return "calibrations";
-      if (p.includes("/certificates")) return "certificates";
-      return "dashboard";
-    };
-    if (normalize(current) !== targetPath) {
+    if (normalizeTourPath(current) !== targetPath) {
       saveStep(startAt);
       sessionStorage.setItem(RUNNING_KEY, "1");
       sessionStorage.setItem(RESUME_KEY, "1");

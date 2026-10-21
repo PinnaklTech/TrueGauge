@@ -70,8 +70,44 @@ class EquipmentOut(BaseModel):
     frequency_days: int
     owner: str
     responsible_email: Optional[str] = None
+    qr_token: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class ScanResolveMatchOut(BaseModel):
+    id: str
+    name: str
+    tag: str
+    status: CalStatus
+    serial: str = ""
+
+
+class ScanResolveOut(BaseModel):
+    equipment: Optional[ScanResolveMatchOut] = None
+    matches: Optional[list[ScanResolveMatchOut]] = None
+    match_type: Optional[Literal["token", "tag", "serial"]] = None
+
+
+class EquipmentLabelOut(BaseModel):
+    id: str
+    name: str
+    tag: str
+    serial: str
+    qr_token: str
+    org_name: str
+    department: str = ""
+    location: str = ""
+
+
+class EquipmentLabelsOut(BaseModel):
+    items: list[EquipmentLabelOut]
+
+
+class LabelPrintedIn(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=500)
+    count: Optional[int] = None
+    preset: str = ""
 
 
 class EquipmentCreate(BaseModel):
@@ -113,9 +149,39 @@ class EquipmentListOut(BaseModel):
     total: int
 
 
+class EquipmentImportRowError(BaseModel):
+    row: int
+    field: str
+    message: str
+
+
+class EquipmentImportResult(BaseModel):
+    created: int
+    skipped: int
+    failed: int
+    errors: list[EquipmentImportRowError]
+
+
 class HealthOut(BaseModel):
     status: str
     database: str
+
+
+class GeneratedReportOut(BaseModel):
+    id: int
+    report_id: str
+    report_type: str
+    filename: str
+    generated_by_name: str
+    generated_by_role: str
+    row_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GeneratedReportListOut(BaseModel):
+    items: list[GeneratedReportOut]
 
 
 class TeamMemberOut(BaseModel):
@@ -341,7 +407,7 @@ class UserListOut(BaseModel):
 
 class AdminUserCreateIn(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=6, max_length=16)
     full_name: str = Field("", max_length=255)
     role: OrgUserRole = "member"
     job_title: str = Field("", max_length=255)
@@ -356,11 +422,23 @@ class AdminUserUpdateIn(BaseModel):
     job_title: Optional[str] = Field(None, max_length=255)
     department: Optional[str] = Field(None, max_length=255)
     active: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=12, max_length=128)
+    password: Optional[str] = Field(None, min_length=6, max_length=16)
 
 
 class SendCredentialsIn(BaseModel):
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=6, max_length=16)
+
+
+class EffectiveSettingsOut(BaseModel):
+    timezone: str
+    date_format: str
+    time_format: str
+    week_start: str
+    reminder_send_hour: int
+    reminder_skip_weekends: bool
+    allow_user_display_override: bool
+    allow_user_channel_toggle: bool
+    sources: dict[str, str] = Field(default_factory=dict)
 
 
 class MeOut(UserOut):
@@ -370,6 +448,10 @@ class MeOut(UserOut):
     storage_enabled: bool = False
     storage_used_bytes: int = 0
     storage_quota_bytes: int = 0
+    effective_settings: Optional[EffectiveSettingsOut] = None
+    timezone_override: Optional[str] = None
+    date_format_override: Optional[str] = None
+    time_format_override: Optional[str] = None
 
 
 class AuthTokenOut(BaseModel):
@@ -398,7 +480,7 @@ class HandoffExchangeIn(BaseModel):
 
 class RegisterIn(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=6, max_length=16)
     full_name: str = Field("", max_length=255)
     company_name: str = Field("", max_length=255)
 
@@ -416,7 +498,7 @@ class StaffLoginIn(BaseModel):
 
 
 class ForcePasswordIn(BaseModel):
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=6, max_length=16)
 
 
 class UserUpdateIn(BaseModel):
@@ -430,7 +512,7 @@ class UserUpdateIn(BaseModel):
     locale: Optional[str] = Field(None, max_length=32)
     notify_email: Optional[bool] = None
     notify_in_app: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=12, max_length=128)
+    password: Optional[str] = Field(None, min_length=6, max_length=16)
     current_password: Optional[str] = Field(None, min_length=1, max_length=128)
     mark_profile_setup: Optional[bool] = None
 
@@ -470,7 +552,7 @@ class TenantCreateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     slug: Optional[str] = Field(None, max_length=64)
     admin_email: str = Field(..., min_length=3, max_length=255)
-    admin_password: str = Field(..., min_length=12, max_length=128)
+    admin_password: str = Field(..., min_length=6, max_length=16)
     admin_full_name: Optional[str] = Field(None, max_length=255)
     send_welcome_email: bool = True
 
@@ -486,14 +568,14 @@ class DayCountOut(BaseModel):
 
 class PlatformStaffCreateIn(BaseModel):
     email: str = Field(..., max_length=255)
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=6, max_length=16)
     full_name: str = Field("", max_length=255)
 
 
 class PlatformStaffUpdateIn(BaseModel):
     full_name: Optional[str] = Field(None, max_length=255)
     active: Optional[bool] = None
-    password: Optional[str] = Field(None, min_length=12, max_length=128)
+    password: Optional[str] = Field(None, min_length=6, max_length=16)
 
 
 class PlatformUserOut(BaseModel):
@@ -616,7 +698,7 @@ class PlatformTenantSummaryOut(BaseModel):
 
 class WelcomeEmailIn(BaseModel):
     user_id: Optional[int] = None
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=6, max_length=16)
 
 
 class PlatformEmailQueueItem(BaseModel):
@@ -733,7 +815,7 @@ class ReminderRulesOut(BaseModel):
     remind_1d: bool = False
     remind_overdue_daily: bool = False
     remind_weekly_digest: bool = False
-    reminder_hour_local: int = 8
+    reminder_hour_local: int = 9
     last_daily_run_at: Optional[datetime] = None
 
 
@@ -744,7 +826,57 @@ class ReminderRulesIn(BaseModel):
     remind_1d: bool = False
     remind_overdue_daily: bool = False
     remind_weekly_digest: bool = False
-    reminder_hour_local: int = Field(8, ge=0, le=23)
+    reminder_hour_local: int = Field(9, ge=0, le=23)
+
+
+class OrgSettingsOut(BaseModel):
+    timezone: str
+    date_format: str
+    time_format: str
+    week_start: str
+    reminder_send_hour: int
+    reminder_skip_weekends: bool
+    allow_user_display_override: bool
+    allow_user_channel_toggle: bool
+    remind_30d: bool = False
+    remind_14d: bool = False
+    remind_7d: bool = False
+    remind_1d: bool = False
+    remind_overdue_daily: bool = False
+    remind_weekly_digest: bool = False
+
+
+class OrgSettingsPatchIn(BaseModel):
+    timezone: Optional[str] = Field(None, max_length=64)
+    date_format: Optional[str] = Field(None, max_length=32)
+    time_format: Optional[str] = Field(None, max_length=8)
+    week_start: Optional[str] = Field(None, max_length=16)
+    reminder_send_hour: Optional[int] = Field(None, ge=0, le=23)
+    reminder_skip_weekends: Optional[bool] = None
+    allow_user_display_override: Optional[bool] = None
+    allow_user_channel_toggle: Optional[bool] = None
+    remind_30d: Optional[bool] = None
+    remind_14d: Optional[bool] = None
+    remind_7d: Optional[bool] = None
+    remind_1d: Optional[bool] = None
+    remind_overdue_daily: Optional[bool] = None
+    remind_weekly_digest: Optional[bool] = None
+
+
+class UserPreferencesIn(BaseModel):
+    timezone_override: Optional[str] = Field(None, max_length=64)
+    date_format_override: Optional[str] = Field(None, max_length=32)
+    time_format_override: Optional[str] = Field(None, max_length=8)
+    clear_timezone_override: bool = False
+    clear_date_format_override: bool = False
+    clear_time_format_override: bool = False
+    notify_email: Optional[bool] = None
+    notify_in_app: Optional[bool] = None
+
+
+class TestReminderOut(BaseModel):
+    ok: bool = True
+    message: str = ""
 
 
 class ReminderTickOut(BaseModel):

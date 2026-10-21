@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import AppSettings, EquipmentCache
 from app.services.odoo_client import OdooClient, OdooError
+from app.services.qr_token import allocate_qr_token
 
 # Defaults used when Settings field mappings are blank (Odoo Studio names)
 DEFAULT_CALIBRATION_DATE_FIELD = "x_studio_equipment_last_calibration_date"
@@ -368,6 +369,9 @@ def sync_equipment_from_odoo(db: Session, settings_row: AppSettings) -> dict[str
                 setattr(existing, key, mapped[key])
             updated += 1
             continue
+        mapped["qr_token"] = allocate_qr_token(
+            db, model_cls=EquipmentCache, column_attr=EquipmentCache.qr_token
+        )
         db.add(EquipmentCache(tenant_id=settings_row.tenant_id, **mapped))
         imported += 1
 

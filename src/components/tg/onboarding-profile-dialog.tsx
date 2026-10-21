@@ -12,7 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getOrgTaxonomy, updateMe, type AuthUser } from "@/lib/api";
+import { COMMON_TIMEZONES, timezoneDisplayLabel } from "@/lib/format-settings";
+import { PASSWORD_MAX_LEN, PASSWORD_POLICY_HINT, passwordPolicyError } from "@/lib/password-policy";
 import { toast } from "sonner";
+
+const ONBOARDING_TIMEZONES = COMMON_TIMEZONES.map((z) => ({
+  value: z.value,
+  label: timezoneDisplayLabel(z.value),
+}));
 
 type Props = {
   open: boolean;
@@ -56,8 +63,9 @@ export function OnboardingProfileDialog({ open, user, onCompleted }: Props) {
       return;
     }
     if (newPassword || confirmPassword || currentPassword) {
-      if (newPassword.length < 12) {
-        toast.error("New password must be at least 12 characters");
+      const policyErr = passwordPolicyError(newPassword);
+      if (policyErr) {
+        toast.error(policyErr);
         return;
       }
       if (newPassword !== confirmPassword) {
@@ -157,12 +165,11 @@ export function OnboardingProfileDialog({ open, user, onCompleted }: Props) {
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
             >
-              <option value="UTC">UTC</option>
-              <option value="America/Chicago">Central Standard Time (CST)</option>
-              <option value="America/New_York">Eastern Time (ET)</option>
-              <option value="America/Los_Angeles">Pacific Time (PT)</option>
-              <option value="Europe/London">London (GMT/BST)</option>
-              <option value="Asia/Kolkata">India Standard Time (IST)</option>
+              {ONBOARDING_TIMEZONES.map((z) => (
+                <option key={z.value} value={z.value}>
+                  {z.label}
+                </option>
+              ))}
             </select>
           </Field>
 
@@ -197,13 +204,14 @@ export function OnboardingProfileDialog({ open, user, onCompleted }: Props) {
                   onChange={(e) => setCurrentPassword(e.target.value)}
                 />
               </Field>
-              <Field label="New password" htmlFor="onb-new-pw">
+              <Field label={`New password (${PASSWORD_POLICY_HINT})`} htmlFor="onb-new-pw">
                 <Input
                   id="onb-new-pw"
                   type="password"
                   autoComplete="new-password"
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  maxLength={PASSWORD_MAX_LEN}
+                  onChange={(e) => setNewPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 />
               </Field>
               <Field label="Confirm new password" htmlFor="onb-confirm-pw">
@@ -212,7 +220,8 @@ export function OnboardingProfileDialog({ open, user, onCompleted }: Props) {
                   type="password"
                   autoComplete="new-password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  maxLength={PASSWORD_MAX_LEN}
+                  onChange={(e) => setConfirmPassword(e.target.value.slice(0, PASSWORD_MAX_LEN))}
                 />
               </Field>
             </div>

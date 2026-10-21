@@ -12,6 +12,7 @@ import {
   Mail,
   Send,
   KeyRound,
+  Globe2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,9 @@ import {
   saveReminderRules,
   getReminderLogs,
   getMe,
+  getOrgSettings,
+  patchOrgSettings,
+  sendTestReminder,
   listUsers,
   createUser,
   updateUser,
@@ -61,7 +65,21 @@ import {
   type OrgTaxonomyApi,
   type ReminderRulesApi,
   type ReminderLogApi,
+  type OrgSettingsApi,
 } from "@/lib/api";
+import {
+  DATE_FORMAT_OPTIONS,
+  TIME_FORMAT_OPTIONS,
+  formatDate,
+  formatDateTime,
+  formatHourLabel,
+  timezoneShortLabel,
+  type DateFormatOption,
+  type TimeFormatOption,
+} from "@/lib/format-settings";
+import { useWorkspaceFormat } from "@/lib/format-context";
+import { PASSWORD_POLICY_HINT, passwordPolicyError } from "@/lib/password-policy";
+import { TimezoneCombobox } from "@/components/tg/timezone-combobox";
 import {
   defaultOrgProfile,
   roleDisplayLabel,
@@ -80,6 +98,7 @@ import { PageState } from "@/components/tg/page-state";
 
 const sections = [
   { id: "company", label: "Organization Profile", icon: Building2 },
+  { id: "regional", label: "Regional & notifications", icon: Globe2 },
   { id: "accounts", label: "People & access", icon: KeyRound },
   { id: "users", label: "Notification recipients", icon: Users },
   { id: "email", label: "Email Delivery", icon: Mail },
@@ -128,6 +147,17 @@ function SettingsPage() {
   };
 
   useEffect(() => {
+    const loadOrg = () =>
+      getOrgProfile().then((row) =>
+        setOrg({
+          companyName: row.company_name,
+          industry: row.industry,
+          address: row.address,
+          timezone: row.timezone,
+          accentColor: row.accent_color,
+        }),
+      );
+
     void getMe()
       .then((u) => {
         if (u.role !== "admin" && u.role !== "platform_admin") {
@@ -136,17 +166,15 @@ function SettingsPage() {
         }
         setAccess("allowed");
         setOwnerName(u.full_name.trim() || "Administrator");
-        return getOrgProfile().then((row) =>
-          setOrg({
-            companyName: row.company_name,
-            industry: row.industry,
-            address: row.address,
-            timezone: row.timezone,
-            accentColor: row.accent_color,
-          }),
-        );
+        return loadOrg();
       })
       .catch(() => setAccess("denied"));
+
+    const onOrgUpdated = () => {
+      void loadOrg().catch(() => undefined);
+    };
+    window.addEventListener("tg-org-profile-updated", onOrgUpdated);
+    return () => window.removeEventListener("tg-org-profile-updated", onOrgUpdated);
   }, []);
 
   const saveOrg = async () => {
@@ -193,16 +221,16 @@ function SettingsPage() {
       )}
       {access === "allowed" && (
         <>
-      <div className="mb-6">
+      <div className="mb-4 md:mb-6">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-            System Settings & Controls
+          <h1 className="font-display text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+            Settings
           </h1>
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
-            Org Owner: {ownerName}
+            Owner: {ownerName}
           </span>
         </div>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+        <p className="mt-1 hidden max-w-3xl text-sm text-muted-foreground md:block">
           Manage organization metadata, configure team roles, adjust automated warning alarms, and
           connect ERP platforms. Edit your personal admin account in{" "}
           <Link to="/workspace/$slug/profile" params={{ slug }} className="text-primary hover:underline">
@@ -210,11 +238,43 @@ function SettingsPage() {
           </Link>
           .
         </p>
+        <p className="mt-1 text-sm text-muted-foreground md:hidden">
+          Org controls ·{" "}
+          <Link to="/workspace/$slug/profile" params={{ slug }} className="text-primary hover:underline">
+            Profile
+          </Link>
+        </p>
+      </div>
+
+      {/* Mobile: sticky horizontal section chips */}
+      <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-10 -mx-4 mb-4 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur-md lg:hidden">
+        <div className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {sections.map((s) => {
+            const Icon = s.icon;
+            const isActive = active === s.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => selectSection(s.id)}
+                className={cn(
+                  "inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">{s.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside>
-          <nav className="space-y-0.5">
+        <aside className="hidden lg:block">
+          <nav className="sticky top-20 space-y-0.5">
             {sections.map((s) => {
               const Icon = s.icon;
               const isActive = active === s.id;
@@ -241,7 +301,7 @@ function SettingsPage() {
         <div className="min-w-0">
           {active === "company" && (
             <SettingsBlock
-              title="Company Metadata & Custom Brand Settings"
+              title="Organization Profile"
               description="Workspace identity used in the sidebar and report headers."
             >
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -275,44 +335,27 @@ function SettingsPage() {
                     />
                   </Field>
                 </div>
-                <Field label="Local Timezone" htmlFor="org-timezone">
-                  <select
-                    id="org-timezone"
-                    value={org.timezone}
-                    onChange={(e) => setOrg({ ...org, timezone: e.target.value })}
-                    className="tg-select"
+                <div className="sm:col-span-2 rounded-lg border border-border bg-surface/40 px-4 py-3 text-sm text-muted-foreground">
+                  Timezone, date/time formats, and reminder send hour are managed under{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline"
+                    onClick={() => selectSection("regional")}
                   >
-                    <option value="UTC">UTC</option>
-                    <option value="America/Chicago">Central Standard Time (CST)</option>
-                    <option value="America/New_York">Eastern Time (ET)</option>
-                    <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                    <option value="Europe/London">London (GMT/BST)</option>
-                    <option value="Asia/Kolkata">India Standard Time (IST)</option>
-                  </select>
-                </Field>
-                <Field label="Primary Color Palette Accent" htmlFor="org-accent">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="org-accent"
-                      type="color"
-                      value={org.accentColor}
-                      onChange={(e) => setOrg({ ...org, accentColor: e.target.value })}
-                      className="h-10 w-12 cursor-pointer rounded-md border border-border bg-surface p-1"
-                    />
-                    <Input
-                      value={org.accentColor}
-                      onChange={(e) => setOrg({ ...org, accentColor: e.target.value })}
-                      className="font-mono"
-                      aria-label="Accent color hex"
-                    />
-                  </div>
-                </Field>
+                    Regional &amp; notifications
+                  </button>
+                  .
+                </div>
               </div>
               <div className="mt-4 flex justify-end">
-                <Button onClick={() => void saveOrg()}>Save Profile Settings</Button>
+                <Button className="h-11 w-full sm:h-9 sm:w-auto" onClick={() => void saveOrg()}>
+                  Save Profile Settings
+                </Button>
               </div>
             </SettingsBlock>
           )}
+
+          {active === "regional" && <RegionalNotificationsPanel selectSection={selectSection} />}
 
           {active === "accounts" && <PeopleAccessPanel />}
 
@@ -340,6 +383,236 @@ function SettingsPage() {
   );
 }
 
+function RegionalNotificationsPanel({
+  selectSection,
+}: {
+  selectSection: (id: SettingsSection) => void;
+}) {
+  const [settings, setSettings] = useState<OrgSettingsApi | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    void getOrgSettings()
+      .then(setSettings)
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Could not load regional settings"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const preview = useMemo(() => {
+    if (!settings) return "";
+    const hourLabel = formatHourLabel(settings.reminder_send_hour, settings.time_format);
+    const tzLabel = timezoneShortLabel(settings.timezone);
+    const dtEx = formatDateTime(new Date(Date.UTC(2026, 9, 21, 9, 0, 0)), {
+      date_format: settings.date_format,
+      time_format: settings.time_format,
+      timezone: settings.timezone,
+    });
+    return `Reminders are sent every day at ${hourLabel} ${tzLabel}. Example date: ${dtEx}.`;
+  }, [settings]);
+
+  const onSave = async () => {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      const saved = await patchOrgSettings({
+        timezone: settings.timezone,
+        date_format: settings.date_format,
+        time_format: settings.time_format,
+        week_start: settings.week_start,
+        reminder_send_hour: settings.reminder_send_hour,
+        reminder_skip_weekends: settings.reminder_skip_weekends,
+        allow_user_display_override: settings.allow_user_display_override,
+        allow_user_channel_toggle: settings.allow_user_channel_toggle,
+      });
+      setSettings(saved);
+      window.dispatchEvent(new CustomEvent("tg-org-profile-updated"));
+      toast.success("Regional settings saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save regional settings");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onTest = async () => {
+    setTesting(true);
+    try {
+      const res = await sendTestReminder();
+      toast.success(res.message || "Test reminder sent");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send test reminder");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  if (loading || !settings) {
+    return (
+      <SettingsBlock title="Regional & notifications" description="Organization timezone and reminder schedule.">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </SettingsBlock>
+    );
+  }
+
+  return (
+    <SettingsBlock
+      title="Regional & notifications"
+      description="Single source of truth for timezone, date/time formats, and when reminder digests go out."
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label="Timezone" htmlFor="reg-timezone">
+            <TimezoneCombobox
+              id="reg-timezone"
+              value={settings.timezone}
+              onChange={(tz) => setSettings({ ...settings, timezone: tz })}
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Open the list and type to search by name or abbreviation (CST, IST, Eastern…).
+            </p>
+          </Field>
+        </div>
+
+        <Field label="Date format" htmlFor="reg-date-format">
+          <select
+            id="reg-date-format"
+            className="tg-select"
+            value={settings.date_format}
+            onChange={(e) =>
+              setSettings({ ...settings, date_format: e.target.value as DateFormatOption })
+            }
+          >
+            {DATE_FORMAT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label} · e.g. {formatDate(new Date(), { date_format: o.value })}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Time format" htmlFor="reg-time-format">
+          <select
+            id="reg-time-format"
+            className="tg-select"
+            value={settings.time_format}
+            onChange={(e) =>
+              setSettings({ ...settings, time_format: e.target.value as TimeFormatOption })
+            }
+          >
+            {TIME_FORMAT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Week starts on" htmlFor="reg-week-start">
+          <select
+            id="reg-week-start"
+            className="tg-select"
+            value={settings.week_start}
+            onChange={(e) => setSettings({ ...settings, week_start: e.target.value })}
+          >
+            <option value="monday">Monday</option>
+            <option value="sunday">Sunday</option>
+          </select>
+        </Field>
+
+        <Field label="Reminder send hour" htmlFor="reg-send-hour">
+          <select
+            id="reg-send-hour"
+            className="tg-select"
+            value={settings.reminder_send_hour}
+            onChange={(e) =>
+              setSettings({ ...settings, reminder_send_hour: Number(e.target.value) })
+            }
+          >
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {formatHourLabel(h, settings.time_format)}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <div className="sm:col-span-2 flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">Skip weekends</div>
+            <div className="text-xs text-muted-foreground">
+              No digests on Saturday or Sunday; Monday includes weekend due items
+            </div>
+          </div>
+          <Switch
+            checked={settings.reminder_skip_weekends}
+            onCheckedChange={(v) => setSettings({ ...settings, reminder_skip_weekends: v })}
+          />
+        </div>
+
+        <div className="sm:col-span-2 flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">
+              Let users choose their own timezone and date/time format
+            </div>
+            <div className="text-xs text-muted-foreground">Display overrides only; send hour stays org-wide</div>
+          </div>
+          <Switch
+            checked={settings.allow_user_display_override}
+            onCheckedChange={(v) => setSettings({ ...settings, allow_user_display_override: v })}
+          />
+        </div>
+
+        <div className="sm:col-span-2 flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">
+              Let users turn their own reminders on or off
+            </div>
+            <div className="text-xs text-muted-foreground">Email and in-app channel toggles on Profile</div>
+          </div>
+          <Switch
+            checked={settings.allow_user_channel_toggle}
+            onCheckedChange={(v) => setSettings({ ...settings, allow_user_channel_toggle: v })}
+          />
+        </div>
+
+        <div className="sm:col-span-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground">
+          {preview}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 w-full sm:h-9 sm:w-auto"
+          disabled={testing}
+          onClick={() => void onTest()}
+        >
+          <Send className="mr-1.5 h-3.5 w-3.5" />
+          {testing ? "Sending…" : "Send me a test reminder"}
+        </Button>
+        <Button className="h-11 w-full sm:h-9 sm:w-auto" disabled={saving} onClick={() => void onSave()}>
+          {saving ? "Saving…" : "Save regional settings"}
+        </Button>
+      </div>
+
+      <p className="mt-3 text-xs text-muted-foreground">
+        Day-window toggles (30 / 14 / 7 / 1 day, overdue, weekly) live under{" "}
+        <button
+          type="button"
+          className="font-medium text-primary hover:underline"
+          onClick={() => selectSection("notifications")}
+        >
+          Alarm &amp; Reminder Rules
+        </button>
+        .
+      </p>
+    </SettingsBlock>
+  );
+}
+
 function ReminderRulesPanel({
   openCheckEmail,
   selectSection,
@@ -354,7 +627,7 @@ function ReminderRulesPanel({
     remind_1d: false,
     remind_overdue_daily: false,
     remind_weekly_digest: false,
-    reminder_hour_local: 8,
+    reminder_hour_local: 9,
     last_daily_run_at: null,
   };
   const [rules, setRules] = useState<ReminderRulesApi>(defaults);
@@ -430,6 +703,8 @@ function ReminderRulesPanel({
   const onSave = async () => {
     setSaving(true);
     try {
+      // Preserve send hour from Regional settings (single source of truth)
+      const regional = await getOrgSettings();
       const saved = await saveReminderRules({
         remind_30d: rules.remind_30d,
         remind_14d: rules.remind_14d,
@@ -437,7 +712,7 @@ function ReminderRulesPanel({
         remind_1d: rules.remind_1d,
         remind_overdue_daily: rules.remind_overdue_daily,
         remind_weekly_digest: rules.remind_weekly_digest,
-        reminder_hour_local: rules.reminder_hour_local,
+        reminder_hour_local: regional.reminder_send_hour,
       });
       setRules(saved);
       toast.success("Reminder rules saved");
@@ -475,21 +750,30 @@ function ReminderRulesPanel({
     return "text-muted-foreground bg-muted";
   };
 
+  const { formatDateTime } = useWorkspaceFormat();
   const fmtWhen = (value?: string | null) => {
     if (!value) return "—";
     const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+    return Number.isNaN(d.getTime()) ? value : formatDateTime(d);
   };
 
   return (
     <div className="space-y-6">
     <SettingsBlock
       title="Alarm & Reminder Rules"
-      description="Workspace reminders run once per day at 08:00 in the organization timezone. Emails use SMTP under Email Delivery."
+      description="Choose which due windows trigger reminders. Send hour and timezone are set under Regional & notifications."
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface/40 px-4 py-3">
         <p className="text-sm text-muted-foreground">
-          Outbound mail is configured in{" "}
+          Send hour &amp; formats:{" "}
+          <button
+            type="button"
+            className="font-medium text-primary hover:underline"
+            onClick={() => selectSection("regional")}
+          >
+            Regional &amp; notifications
+          </button>
+          . Outbound mail:{" "}
           <button
             type="button"
             className="font-medium text-primary hover:underline"
@@ -500,7 +784,7 @@ function ReminderRulesPanel({
           .
           {rules.last_daily_run_at ? (
             <span className="mt-1 block text-xs">
-              Last daily run: {new Date(rules.last_daily_run_at).toLocaleString()}
+              Last daily run: {fmtWhen(rules.last_daily_run_at)}
             </span>
           ) : null}
         </p>
@@ -531,7 +815,11 @@ function ReminderRulesPanel({
             ))}
           </div>
           <div className="mt-4 flex justify-end">
-            <Button onClick={() => void onSave()} disabled={saving}>
+            <Button
+              className="h-11 w-full sm:h-9 sm:w-auto"
+              onClick={() => void onSave()}
+              disabled={saving}
+            >
               {saving ? "Saving…" : "Save reminder rules"}
             </Button>
           </div>
@@ -775,12 +1063,15 @@ function ReminderRulesPanel({
 }
 
 function genTempPassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
-  let out = "";
-  const bytes = new Uint8Array(16);
+  // 12 chars within 6–16 policy, always includes a special character
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const specials = "!@#$%&*";
+  const bytes = new Uint8Array(11);
   crypto.getRandomValues(bytes);
-  for (let i = 0; i < bytes.length; i++) out += alphabet[bytes[i] % alphabet.length];
-  return `${out}Aa1!`;
+  let out = "";
+  for (let i = 0; i < 10; i++) out += alphabet[bytes[i] % alphabet.length];
+  out += specials[bytes[10] % specials.length];
+  return out;
 }
 
 function TaxonomyRegistersPanel() {
@@ -1020,8 +1311,9 @@ function PeopleAccessPanel() {
       toast.error("Email and password are required");
       return;
     }
-    if (password.length < 12) {
-      toast.error("Password must be at least 12 characters");
+    const pwErr = passwordPolicyError(password);
+    if (pwErr) {
+      toast.error(pwErr);
       return;
     }
     setSaving(true);
@@ -1064,9 +1356,12 @@ function PeopleAccessPanel() {
 
   const onSaveEdit = async () => {
     if (!editing) return;
-    if (editPassword.trim() && editPassword.trim().length < 12) {
-      toast.error("Password must be at least 12 characters");
-      return;
+    if (editPassword.trim()) {
+      const editPwErr = passwordPolicyError(editPassword.trim());
+      if (editPwErr) {
+        toast.error(editPwErr);
+        return;
+      }
     }
     setEditSaving(true);
     try {
@@ -1172,11 +1467,12 @@ function PeopleAccessPanel() {
         title="People & access"
         description="Manage who can sign in to this workspace and which role they have. New accounts automatically appear under Notification recipients."
       >
+        <p className="mb-2 text-xs text-muted-foreground md:hidden">Swipe sideways to compare roles</p>
         <div className="mb-4 overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                <th className="px-3 py-2">Capability</th>
+                <th className="sticky left-0 z-[1] bg-surface-2 px-3 py-2">Capability</th>
                 {WORKSPACE_ROLES.map((r) => (
                   <th key={r} className="px-3 py-2 text-center">
                     {ROLE_META[r].label}
@@ -1187,7 +1483,7 @@ function PeopleAccessPanel() {
             <tbody>
               {PERMISSION_ROWS.map((row) => (
                 <tr key={row.key} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 text-foreground">{row.label}</td>
+                  <td className="sticky left-0 z-[1] bg-card px-3 py-2 text-foreground">{row.label}</td>
                   {WORKSPACE_ROLES.map((r) => (
                     <td key={r} className="px-3 py-2 text-center">
                       <span
@@ -1217,36 +1513,38 @@ function PeopleAccessPanel() {
         title="Login users"
         description="People with TrueGage accounts. Share credentials securely or email them when SMTP is configured."
       >
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Input
             placeholder="Search name or email…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="max-w-xs"
+            className="h-11 w-full sm:h-9 sm:max-w-xs"
           />
-          <select
-            className="tg-select max-w-[140px]"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
-          >
-            <option value="all">All roles</option>
-            {WORKSPACE_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_META[r].label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="tg-select max-w-[140px]"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          >
-            <option value="all">All status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          <div className="flex-1" />
-          <Button size="sm" onClick={openCreate}>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <select
+              className="tg-select h-11 w-full sm:h-9 sm:max-w-[140px]"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
+            >
+              <option value="all">All roles</option>
+              {WORKSPACE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_META[r].label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="tg-select h-11 w-full sm:h-9 sm:max-w-[140px]"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            >
+              <option value="all">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div className="hidden flex-1 sm:block" />
+          <Button className="h-11 w-full sm:h-8 sm:w-auto" size="sm" onClick={openCreate}>
             + Add person
           </Button>
         </div>
@@ -1256,107 +1554,200 @@ function PeopleAccessPanel() {
         ) : filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">No users match these filters.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-surface-2 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  <th className="px-3 py-2">User</th>
-                  <th className="px-3 py-2">Role</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Updated</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((u) => (
-                  <tr key={u.id} className="border-b border-border last:border-0">
-                    <td className="px-3 py-2.5">
-                      <div className="font-medium text-foreground">
+          <>
+            {/* Mobile cards */}
+            <ul className="space-y-3 md:hidden">
+              {filtered.map((u) => (
+                <li
+                  key={u.id}
+                  className="rounded-xl border border-border bg-surface/40 p-3.5 shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-foreground">
                         {u.full_name || "—"}
                         {u.id === meId && (
                           <span className="ml-1.5 text-[10px] font-semibold uppercase text-primary">
                             you
                           </span>
                         )}
-                      </div>
-                      <div className="font-mono text-[11px] text-muted-foreground">{u.email}</div>
+                      </p>
+                      <p className="truncate font-mono text-xs text-muted-foreground">{u.email}</p>
                       {u.department ? (
-                        <div className="text-[11px] text-muted-foreground">{u.department}</div>
+                        <p className="text-xs text-muted-foreground">{u.department}</p>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="font-medium text-foreground">{roleDisplayLabel(u.role)}</div>
-                      <div className="max-w-[180px] text-[11px] text-muted-foreground">
-                        {roleBlurb(u.role)}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={cn(
-                          "rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase",
-                          u.active !== false
-                            ? "bg-success/15 text-success"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {u.active !== false ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
-                      {u.updated_at ? new Date(u.updated_at).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <div className="flex flex-wrap justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
-                          Manage
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase",
+                        u.active !== false
+                          ? "bg-success/15 text-success"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {u.active !== false ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-foreground">{roleDisplayLabel(u.role)}</p>
+                  <p className="text-xs text-muted-foreground">{roleBlurb(u.role)}</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10"
+                      onClick={() => openEdit(u)}
+                    >
+                      Manage
+                    </Button>
+                    {u.id !== meId ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-10"
+                          onClick={() => void onToggleActive(u)}
+                        >
+                          {u.active !== false ? "Disable" : "Enable"}
                         </Button>
-                        {u.id !== meId && (
-                          <>
-                            <Button variant="ghost" size="sm" onClick={() => void onRevoke(u)}>
-                              Revoke sessions
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => void onEmailCredentials(u)}
-                              disabled={!smtpReady}
-                              title={
-                                smtpReady
-                                  ? "Reset password and email credentials"
-                                  : "Configure SMTP in Email Delivery"
-                              }
-                            >
-                              Email credentials
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => void onToggleActive(u)}>
-                              {u.active !== false ? "Disable" : "Enable"}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive"
-                              onClick={() => void onDelete(u)}
-                            >
-                              Delete
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </td>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-10"
+                          onClick={() => void onRevoke(u)}
+                        >
+                          Revoke sessions
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-10"
+                          onClick={() => void onEmailCredentials(u)}
+                          disabled={!smtpReady}
+                        >
+                          Email credentials
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="col-span-2 h-10 text-destructive"
+                          onClick={() => void onDelete(u)}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-surface-2 text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2">User</th>
+                    <th className="px-3 py-2">Role</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Updated</th>
+                    <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id} className="border-b border-border last:border-0">
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium text-foreground">
+                          {u.full_name || "—"}
+                          {u.id === meId && (
+                            <span className="ml-1.5 text-[10px] font-semibold uppercase text-primary">
+                              you
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-mono text-[11px] text-muted-foreground">{u.email}</div>
+                        {u.department ? (
+                          <div className="text-[11px] text-muted-foreground">{u.department}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium text-foreground">{roleDisplayLabel(u.role)}</div>
+                        <div className="max-w-[180px] text-[11px] text-muted-foreground">
+                          {roleBlurb(u.role)}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span
+                          className={cn(
+                            "rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase",
+                            u.active !== false
+                              ? "bg-success/15 text-success"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {u.active !== false ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                        {u.updated_at ? new Date(u.updated_at).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
+                            Manage
+                          </Button>
+                          {u.id !== meId && (
+                            <>
+                              <Button variant="ghost" size="sm" onClick={() => void onRevoke(u)}>
+                                Revoke sessions
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => void onEmailCredentials(u)}
+                                disabled={!smtpReady}
+                                title={
+                                  smtpReady
+                                    ? "Reset password and email credentials"
+                                    : "Configure SMTP in Email Delivery"
+                                }
+                              >
+                                Email credentials
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => void onToggleActive(u)}
+                              >
+                                {u.active !== false ? "Disable" : "Enable"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => void onDelete(u)}
+                              >
+                                Delete
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </SettingsBlock>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add person</DialogTitle>
             <DialogDescription>
-              Creates a login for this workspace. Minimum password length is 6 characters.
+              Creates a login for this workspace. Password: {PASSWORD_POLICY_HINT}.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1473,11 +1864,11 @@ function PeopleAccessPanel() {
       </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Manage access</DialogTitle>
             <DialogDescription>
-              Update role, contact details, or set a new password (min 12 characters).
+              Update role, contact details, or set a new password ({PASSWORD_POLICY_HINT}).
             </DialogDescription>
           </DialogHeader>
           {editing && (
@@ -1518,7 +1909,7 @@ function PeopleAccessPanel() {
                   type="password"
                   value={editPassword}
                   onChange={(e) => setEditPassword(e.target.value)}
-                  placeholder="Leave blank to keep current (min 12 if set)"
+                  placeholder={`Leave blank to keep current (${PASSWORD_POLICY_HINT} if set)`}
                 />
               </Field>
               <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
@@ -1581,74 +1972,105 @@ function TeamMembersPanel({
       title="Notification recipients"
       description="Pulled automatically from People & access login accounts. Toggle emails on or off here — add or edit people under People & access."
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">
           {loading ? "Loading…" : `${members.length} recipient${members.length === 1 ? "" : "s"}`}
         </p>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => selectSection("accounts")}>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-10 sm:h-8"
+            onClick={() => selectSection("accounts")}
+          >
             Manage people
           </Button>
-          <Button size="sm" variant="outline" onClick={onSendCheckEmail} disabled={members.length === 0}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-10 sm:h-8"
+            onClick={onSendCheckEmail}
+            disabled={members.length === 0}
+          >
             <Send className="mr-1.5 h-3.5 w-3.5" />
-            Send check email
+            Send check
           </Button>
         </div>
       </div>
 
-      <div className="max-h-[50vh] overflow-x-auto rounded-lg border border-border tg-scrollbar">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[11px] uppercase text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2 font-medium">Name</th>
-              <th className="px-4 py-2 font-medium">Email</th>
-              <th className="px-4 py-2 font-medium">Role</th>
-              <th className="px-4 py-2 font-medium">Emails</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={4} className="p-4">
-                  <PageState
-                    variant="loading"
-                    title="Loading team…"
-                    className="border-0 bg-transparent py-6"
-                  />
-                </td>
-              </tr>
-            ) : members.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="p-4">
-                  <PageState
-                    variant="empty"
-                    title="No login accounts yet"
-                    description="Add people under People & access — they will show up here for calibration emails."
-                    action={{ label: "Open People & access", onClick: () => selectSection("accounts") }}
-                    className="border-0 bg-transparent py-6"
-                  />
-                </td>
-              </tr>
-            ) : (
-              members.map((m) => (
-                <tr key={m.id} className="border-t border-border">
-                  <td className="px-4 py-2.5 font-medium text-foreground">{m.name || "—"}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{m.email}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{roleDisplayLabel(m.role)}</td>
-                  <td className="px-4 py-2.5">
-                    <div className="inline-flex items-center gap-2 text-xs">
-                      <Switch checked={m.active} onCheckedChange={() => void onToggleActive(m)} />
-                      <span className={m.active ? "text-success" : "text-muted-foreground"}>
-                        {m.active ? "On" : "Off"}
-                      </span>
-                    </div>
-                  </td>
+      {loading ? (
+        <PageState
+          variant="loading"
+          title="Loading team…"
+          className="border-0 bg-transparent py-6"
+        />
+      ) : members.length === 0 ? (
+        <PageState
+          variant="empty"
+          title="No login accounts yet"
+          description="Add people under People & access — they will show up here for calibration emails."
+          action={{ label: "Open People & access", onClick: () => selectSection("accounts") }}
+          className="border-0 bg-transparent py-6"
+        />
+      ) : (
+        <>
+          <ul className="space-y-2 md:hidden">
+            {members.map((m) => (
+              <li
+                key={m.id}
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface/40 px-3.5 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-foreground">{m.name || "—"}</p>
+                  <p className="truncate font-mono text-xs text-muted-foreground">{m.email}</p>
+                  <p className="text-xs text-muted-foreground">{roleDisplayLabel(m.role)}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Switch checked={m.active} onCheckedChange={() => void onToggleActive(m)} />
+                  <span
+                    className={cn(
+                      "text-[11px] font-medium",
+                      m.active ? "text-success" : "text-muted-foreground",
+                    )}
+                  >
+                    {m.active ? "On" : "Off"}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden max-h-[50vh] overflow-x-auto rounded-lg border border-border tg-scrollbar md:block">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-surface-2 text-left text-[11px] uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Name</th>
+                  <th className="px-4 py-2 font-medium">Email</th>
+                  <th className="px-4 py-2 font-medium">Role</th>
+                  <th className="px-4 py-2 font-medium">Emails</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {members.map((m) => (
+                  <tr key={m.id} className="border-t border-border">
+                    <td className="px-4 py-2.5 font-medium text-foreground">{m.name || "—"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{m.email}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{roleDisplayLabel(m.role)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="inline-flex items-center gap-2 text-xs">
+                        <Switch checked={m.active} onCheckedChange={() => void onToggleActive(m)} />
+                        <span className={m.active ? "text-success" : "text-muted-foreground"}>
+                          {m.active ? "On" : "Off"}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </SettingsBlock>
   );
 }
@@ -1818,12 +2240,21 @@ function EmailDeliveryPanel({
               <Switch checked={useTls} onCheckedChange={setUseTls} />
             </div>
 
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <Button variant="outline" onClick={() => onCheckEmailOpenChange(true)} disabled={!status?.configured}>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <Button
+                variant="outline"
+                className="h-11 w-full sm:h-9 sm:w-auto"
+                onClick={() => onCheckEmailOpenChange(true)}
+                disabled={!status?.configured}
+              >
                 <Send className="mr-1.5 h-3.5 w-3.5" />
                 Send check email
               </Button>
-              <Button onClick={() => void onSave()} disabled={saving}>
+              <Button
+                className="h-11 w-full sm:h-9 sm:w-auto"
+                onClick={() => void onSave()}
+                disabled={saving}
+              >
                 {saving ? "Saving…" : "Save email settings"}
               </Button>
             </div>
@@ -1896,7 +2327,7 @@ function SendCheckEmailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Send temporary check email</DialogTitle>
           <DialogDescription>
@@ -1968,6 +2399,7 @@ function SendCheckEmailDialog({
 }
 
 function OdooIntegrationPanel() {
+  const { slug } = Route.useParams();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<OdooStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2081,7 +2513,15 @@ function OdooIntegrationPanel() {
         <h2 className="font-display text-base font-semibold text-foreground">ERP Integrations</h2>
         <p className="mb-4 text-sm text-muted-foreground">
           Optional: import equipment from Odoo Online into TrueGage. TrueGage stays the app of
-          record for edits — nothing is written back to Odoo.
+          record for edits — nothing is written back to Odoo. No Odoo? Use{" "}
+          <Link
+            to="/workspace/$slug/equipment"
+            params={{ slug }}
+            className="font-medium text-primary hover:underline"
+          >
+            Import / Export on Equipment
+          </Link>{" "}
+          to upload a CSV or Excel file instead.
         </p>
       </div>
 
@@ -2203,12 +2643,17 @@ function OdooIntegrationPanel() {
             </Field>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button onClick={() => void onSave()} disabled={saving || testing}>
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+          <Button
+            className="h-11 w-full sm:h-9 sm:w-auto"
+            onClick={() => void onSave()}
+            disabled={saving || testing}
+          >
             {saving ? "Saving…" : testing ? "Testing…" : "Save & test connection"}
           </Button>
           <Button
             variant="outline"
+            className="h-11 w-full sm:h-9 sm:w-auto"
             onClick={() => void onTest()}
             disabled={testing || saving || !status?.configured}
           >
@@ -2216,6 +2661,7 @@ function OdooIntegrationPanel() {
           </Button>
           <Button
             variant="outline"
+            className="h-11 w-full sm:h-9 sm:w-auto"
             onClick={() => void onSync()}
             disabled={syncing || !status?.configured}
           >
@@ -2240,13 +2686,15 @@ function SettingsBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-xs">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
+    <div className="rounded-xl border border-border bg-card p-4 shadow-xs sm:p-5">
+      <div className="mb-4 flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground">{title}</h2>
+          <h2 className="text-sm font-semibold tracking-tight text-foreground sm:text-xs sm:uppercase sm:tracking-wider">
+            {title}
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
-        {action}
+        {action ? <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">{action}</div> : null}
       </div>
       {children}
     </div>

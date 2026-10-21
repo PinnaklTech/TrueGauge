@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { getToken } from "@/lib/auth";
 import { getMe } from "@/lib/api";
+import { FormatSettingsProvider } from "@/lib/format-context";
 
 export const Route = createFileRoute("/workspace/$slug")({
   // Boot overlay (root portal) covers pending — avoid a second mid-page spinner.
@@ -35,5 +36,9 @@ export const Route = createFileRoute("/workspace/$slug")({
 });
 
 function WorkspaceLayout() {
-  return <Outlet />;
+  return (
+    <FormatSettingsProvider>
+      <Outlet />
+    </FormatSettingsProvider>
+  );
 }

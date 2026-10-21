@@ -34,7 +34,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { format } from "date-fns";
+import { useWorkspaceFormat } from "@/lib/format-context";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +57,7 @@ function displayCertId(id: string) {
 }
 
 function CertificatesPage() {
+  const { formatDateTime } = useWorkspaceFormat();
   const { slug } = Route.useParams();
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
@@ -365,7 +366,7 @@ function CertificatesPage() {
                       <span>By: {c.uploadedBy || "—"}</span>
                       <span>
                         Uploaded:{" "}
-                        {c.createdAt ? format(new Date(c.createdAt), "MMM d, yyyy") : "—"}
+                        {c.createdAt ? formatDateTime(c.createdAt) : "—"}
                       </span>
                     </div>
 
