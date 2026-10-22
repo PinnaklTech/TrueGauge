@@ -1,4 +1,4 @@
-export type CalStatus = "calibrated" | "due-soon" | "overdue" | "failed" | "inactive";
+export type CalStatus = "calibrated" | "due-soon" | "overdue" | "failed" | "conditional" | "inactive";
 
 export interface Equipment {
   id: string;
@@ -96,5 +96,6 @@ export const statusLabel: Record<CalStatus, string> = {
   "due-soon": "Due Soon",
   overdue: "Overdue",
   failed: "Failed",
+  conditional: "Conditional",
   inactive: "Inactive",
 };

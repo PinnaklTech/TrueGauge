@@ -113,6 +113,7 @@ export function statusBreakdown(equipment: Equipment[]) {
     "due-soon": 0,
     overdue: 0,
     failed: 0,
+    conditional: 0,
     inactive: 0,
   };
   for (const e of equipment) counts[e.status] += 1;

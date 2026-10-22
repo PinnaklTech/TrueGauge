@@ -211,6 +211,8 @@ def timing_label(row: EquipmentCache, today: date) -> str:
 def status_display(row: EquipmentCache, today: date) -> str:
     if row.status == "failed":
         return "Failed"
+    if row.status == "conditional":
+        return "Conditional"
     days = _days_until(row, today)
     if row.status == "overdue" or (days is not None and days < 0):
         return "Overdue"

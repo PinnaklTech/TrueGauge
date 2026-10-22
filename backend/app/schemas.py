@@ -48,7 +48,7 @@ class SyncResult(BaseModel):
     fields_used: list[str] = []
 
 
-CalStatus = Literal["calibrated", "due-soon", "overdue", "failed", "inactive"]
+CalStatus = Literal["calibrated", "due-soon", "overdue", "failed", "conditional", "inactive"]
 EquipmentSource = Literal["local", "odoo"]
 
 
@@ -363,6 +363,9 @@ class CalibrationOut(BaseModel):
     type: ProviderType
     technician: str
     certificate_no: str
+    certificate_id: Optional[str] = None
+    certificate_file_name: Optional[str] = None
+    has_certificate: bool = False
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
 

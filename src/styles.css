@@ -37,6 +37,8 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-conditional: var(--conditional);
+  --color-conditional-foreground: var(--conditional-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-border: var(--border);
@@ -89,6 +91,9 @@
   --success-foreground: #ecfdf5;
   --warning: #d97706;
   --warning-foreground: #fffbeb;
+  /* Light orange — distinct from amber “due soon” */
+  --conditional: #f97316;
+  --conditional-foreground: #fff7ed;
   --info: #0d9488;
   --info-foreground: #f0fdfa;
 
@@ -135,6 +140,8 @@
   --success-foreground: #064e3b;
   --warning: #f59e0b;
   --warning-foreground: #451a03;
+  --conditional: #fb923c;
+  --conditional-foreground: #431407;
   --info: #2dd4bf;
   --info-foreground: #042f2e;
 

@@ -611,6 +611,9 @@ export interface AppCalibration {
   type: ProviderType;
   technician: string;
   certificateNo: string;
+  certificateId: string | null;
+  certificateFileName: string | null;
+  hasCertificate: boolean;
   notes?: string;
 }
 
@@ -639,6 +642,9 @@ interface ApiCalibration {
   type: ProviderType;
   technician: string;
   certificate_no: string;
+  certificate_id?: string | null;
+  certificate_file_name?: string | null;
+  has_certificate?: boolean;
   notes: string | null;
 }
 
@@ -655,6 +661,9 @@ function toCalibration(row: ApiCalibration): AppCalibration {
     type: row.type,
     technician: row.technician,
     certificateNo: row.certificate_no,
+    certificateId: row.certificate_id ?? null,
+    certificateFileName: row.certificate_file_name ?? null,
+    hasCertificate: Boolean(row.has_certificate) || Boolean(row.certificate_id) || Boolean(row.certificate_no),
     notes: row.notes ?? undefined,
   };
 }

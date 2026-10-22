@@ -71,7 +71,7 @@ HEADER_ALIASES: dict[str, str] = {
     "email": "responsible_email",
 }
 
-VALID_STATUSES = frozenset({"calibrated", "due-soon", "overdue", "failed", "inactive"})
+VALID_STATUSES = frozenset({"calibrated", "due-soon", "overdue", "failed", "conditional", "inactive"})
 
 TEMPLATE_EXAMPLE_ROWS = [
     {

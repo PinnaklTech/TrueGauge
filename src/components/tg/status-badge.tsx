@@ -7,11 +7,12 @@ const styles: Record<CalStatus, string> = {
   "due-soon": "bg-[color-mix(in_oklab,var(--color-warning)_16%,transparent)] text-[color:var(--color-warning)] ring-[color-mix(in_oklab,var(--color-warning)_35%,transparent)]",
   overdue: "bg-[color-mix(in_oklab,var(--color-destructive)_14%,transparent)] text-[color:var(--color-destructive)] ring-[color-mix(in_oklab,var(--color-destructive)_30%,transparent)]",
   failed: "bg-[color-mix(in_oklab,var(--color-destructive)_20%,transparent)] text-[color:var(--color-destructive)] ring-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)]",
+  conditional: "bg-[color-mix(in_oklab,var(--color-conditional)_18%,transparent)] text-[color:var(--color-conditional)] ring-[color-mix(in_oklab,var(--color-conditional)_38%,transparent)]",
   inactive: "bg-muted text-muted-foreground ring-border",
 };
 
 export function StatusBadge({ status, className }: { status: CalStatus; className?: string }) {
-  const urgent = status === "overdue" || status === "failed" || status === "due-soon";
+  const urgent = status === "overdue" || status === "failed" || status === "due-soon" || status === "conditional";
   return (
     <span
       className={cn(
@@ -26,6 +27,7 @@ export function StatusBadge({ status, className }: { status: CalStatus; classNam
           urgent && "tg-pulse-dot",
           status === "calibrated" && "bg-[color:var(--color-success)]",
           status === "due-soon" && "bg-[color:var(--color-warning)]",
+          status === "conditional" && "bg-[color:var(--color-conditional)]",
           (status === "overdue" || status === "failed") && "bg-[color:var(--color-destructive)]",
           status === "inactive" && "bg-muted-foreground",
         )}

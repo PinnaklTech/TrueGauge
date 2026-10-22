@@ -51,6 +51,7 @@ const STATUS_COLORS: Record<CalStatus, string> = {
   "due-soon": "var(--color-warning)",
   overdue: "var(--color-destructive)",
   failed: "color-mix(in oklab, var(--color-destructive) 65%, #e879f9)",
+  conditional: "var(--color-conditional)",
   inactive: "var(--color-muted-foreground)",
 };
 

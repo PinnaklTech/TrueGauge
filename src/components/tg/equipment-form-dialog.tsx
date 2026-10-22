@@ -319,6 +319,7 @@ export function EquipmentFormDialog({
                     <option value="due-soon">Due Soon</option>
                     <option value="overdue">Overdue</option>
                     <option value="failed">Failed</option>
+                    <option value="conditional">Conditional</option>
                     <option value="inactive">Inactive</option>
                   </select>
                 </Field>

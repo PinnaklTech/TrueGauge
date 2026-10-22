@@ -19,9 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus } from "lucide-react";
+import { FileCheck2, Plus } from "lucide-react";
 import { format as formatIso } from "date-fns";
 import { useWorkspaceFormat } from "@/lib/format-context";
+import type { CalStatus } from "@/lib/mock-data";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -316,6 +317,7 @@ function CalibrationsPage() {
 
 function HistoryRow({ record: c, slug }: { record: AppCalibration; slug: string }) {
   const { formatDate } = useWorkspaceFormat();
+  const certLabel = c.certificateNo || c.certificateFileName;
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/40">
       <td className="px-4 py-3">{formatDate(c.date)}</td>
@@ -332,7 +334,18 @@ function HistoryRow({ record: c, slug }: { record: AppCalibration; slug: string 
       <td className="px-4 py-3 text-muted-foreground">
         {c.provider || "—"} <span className="text-[10px]">({c.type})</span>
       </td>
-      <td className="px-4 py-3 font-mono text-xs">{c.certificateNo || "—"}</td>
+      <td className="px-4 py-3">
+        {c.hasCertificate ? (
+          <span className="inline-flex max-w-[14rem] items-center gap-1.5 text-xs text-foreground">
+            <FileCheck2 className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-success)]" />
+            <span className="truncate font-mono" title={certLabel || "Attached"}>
+              {certLabel || "Attached"}
+            </span>
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">None</span>
+        )}
+      </td>
       <td className="px-4 py-3 uppercase">{c.result}</td>
     </tr>
   );
@@ -351,7 +364,7 @@ function UrgencyCard({
     owner: string;
     nextCalibration: string;
     days: number;
-    status: "calibrated" | "due-soon" | "overdue" | "failed" | "inactive";
+    status: CalStatus;
   };
   tone: "danger" | "warning";
   onLog?: () => void;

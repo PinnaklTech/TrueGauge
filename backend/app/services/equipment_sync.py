@@ -114,8 +114,8 @@ def compute_status(next_cal: Optional[date], today: Optional[date] = None) -> st
 
 
 def refresh_equipment_status(row: EquipmentCache, today: Optional[date] = None) -> bool:
-    """Keep calendar statuses current from next_calibration. Preserves failed/inactive."""
-    if row.status in ("failed", "inactive"):
+    """Keep calendar statuses current from next_calibration. Preserves failed/conditional/inactive."""
+    if row.status in ("failed", "conditional", "inactive"):
         return False
     new_status = compute_status(row.next_calibration, today)
     if row.status != new_status:

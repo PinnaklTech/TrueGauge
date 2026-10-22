@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy import func, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.accounts import (
     get_or_create_settings,
@@ -955,6 +955,14 @@ def regenerate_equipment_qr_token(
 
 def calibration_to_out(row: CalibrationRecord) -> CalibrationOut:
     eq = row.equipment
+    linked = None
+    for cert in row.certificates or []:
+        if cert.status == "ready":
+            linked = cert
+            break
+        if linked is None:
+            linked = cert
+    cert_no = (row.certificate_no or "").strip()
     return CalibrationOut(
         id=row.public_id,
         equipment_id=eq.public_id if eq else "",
@@ -966,7 +974,10 @@ def calibration_to_out(row: CalibrationRecord) -> CalibrationOut:
         provider=row.provider_name,
         type=row.provider_type,  # type: ignore[arg-type]
         technician=row.technician,
-        certificate_no=row.certificate_no,
+        certificate_no=cert_no,
+        certificate_id=linked.public_id if linked else None,
+        certificate_file_name=linked.file_name if linked else None,
+        has_certificate=bool(linked) or bool(cert_no),
         notes=row.notes,
         created_at=row.created_at,
     )
@@ -991,6 +1002,7 @@ def list_calibrations(
 ) -> CalibrationListOut:
     query = (
         db.query(CalibrationRecord)
+        .options(selectinload(CalibrationRecord.certificates), selectinload(CalibrationRecord.equipment))
         .join(EquipmentCache)
         .filter(CalibrationRecord.tenant_id == ctx.tenant_id)
     )
@@ -1010,6 +1022,7 @@ def list_equipment_calibrations(
     eq = find_equipment(db, equipment_id, ctx.tenant_id)
     rows = (
         db.query(CalibrationRecord)
+        .options(selectinload(CalibrationRecord.certificates), selectinload(CalibrationRecord.equipment))
         .filter(CalibrationRecord.equipment_id == eq.id, CalibrationRecord.tenant_id == ctx.tenant_id)
         .order_by(CalibrationRecord.performed_on.desc(), CalibrationRecord.id.desc())
         .all()
@@ -1054,6 +1067,8 @@ def create_calibration(
             eq.next_calibration = next_due
         if body.result == "fail":
             eq.status = "failed"
+        elif body.result == "conditional":
+            eq.status = "conditional"
         else:
             eq.status = compute_status(eq.next_calibration)
         eq.synced_at = datetime.now(timezone.utc)

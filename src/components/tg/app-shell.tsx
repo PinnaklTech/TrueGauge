@@ -157,6 +157,11 @@ export function AppShell({
 }) {
   const isDashboardLayout = layout === "dashboard";
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const hideScanChrome =
+    pathname.includes("/scan") ||
+    pathname.includes("/reports") ||
+    pathname.includes("/notifications") ||
+    pathname.includes("/settings");
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { slug?: string };
   const queryClient = useQueryClient();
@@ -953,7 +958,7 @@ export function AppShell({
               />
             </div>
 
-            {workspaceSlug && !pathname.includes("/scan") ? (
+            {workspaceSlug && !hideScanChrome ? (
               <Link
                 to="/workspace/$slug/scan"
                 params={{ slug: workspaceSlug }}
@@ -1079,7 +1084,7 @@ export function AppShell({
                   role={me?.role}
                   variant="icon"
                 />
-                {workspaceSlug && !pathname.includes("/scan") ? (
+                {workspaceSlug && !hideScanChrome ? (
                   <Link
                     to="/workspace/$slug/scan"
                     params={{ slug: workspaceSlug }}
@@ -1102,9 +1107,9 @@ export function AppShell({
           {children}
         </main>
 
-        {/* Hide FAB on scan + equipment detail (detail has its own shop-floor action bar) */}
+        {/* Hide FAB on scan, insights/settings, and equipment detail (detail has its own shop-floor action bar) */}
         {workspaceSlug &&
-        !pathname.includes("/scan") &&
+        !hideScanChrome &&
         !/\/equipment\/[^/]+$/.test(pathname) ? (
           <Link
             to="/workspace/$slug/scan"

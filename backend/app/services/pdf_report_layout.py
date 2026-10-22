@@ -22,6 +22,7 @@ TEAL_LIGHT = (230, 255, 250)  # #E6FFFA on-teal eyebrow / tagline
 TEAL_NEEDLE = (60, 199, 181)  # fallback vector needle
 GREEN = (30, 158, 90)
 AMBER = (217, 154, 0)
+ORANGE = (249, 115, 22)  # #F97316 light orange — conditional
 RED = (214, 69, 69)
 MAROON = (142, 27, 58)
 SLATE = (122, 133, 148)
@@ -44,10 +45,12 @@ STATUS_COLORS: dict[str, tuple[int, int, int]] = {
     "due soon": AMBER,
     "overdue": RED,
     "failed": MAROON,
+    "conditional": ORANGE,
     "inactive": SLATE,
     "pass": GREEN,
     "attention": AMBER,
     "fail": RED,
+    "conditional result": ORANGE,
 }
 
 MARGIN_X = 18.0

@@ -198,6 +198,28 @@ function EquipmentDetail() {
       .finally(() => setRegenerating(false));
   };
 
+  const previewCalibrationCertificate = (certificateId: string, fileName: string) => {
+    const found = certificates.find((c) => c.id === certificateId);
+    if (found) {
+      setPreview(found);
+      return;
+    }
+    setPreview({
+      id: certificateId,
+      equipmentId: item.id,
+      equipmentTag: item.tag,
+      equipmentName: item.name,
+      calibrationId: null,
+      fileName,
+      contentType: "application/pdf",
+      sizeBytes: 0,
+      sha256: "",
+      status: "ready",
+      uploadedBy: null,
+      createdAt: null,
+    });
+  };
+
   // Shop-floor sticky actions on all mobile detail views (list, overdue, scan, etc.)
   const showStickyBar = allowWrite || arrivedFromScan;
 
@@ -321,6 +343,7 @@ function EquipmentDetail() {
               slug={slug}
               equipmentId={item.id}
               allowWrite={allowWrite}
+              onPreviewCertificate={previewCalibrationCertificate}
             />
           </section>
           <section>
@@ -443,6 +466,7 @@ function EquipmentDetail() {
               slug={slug}
               equipmentId={item.id}
               allowWrite={allowWrite}
+              onPreviewCertificate={previewCalibrationCertificate}
             />
           </TabsContent>
 
@@ -646,11 +670,13 @@ function HistoryPanel({
   slug,
   equipmentId,
   allowWrite,
+  onPreviewCertificate,
 }: {
   history: AppCalibration[];
   slug: string;
   equipmentId: string;
   allowWrite: boolean;
+  onPreviewCertificate?: (certificateId: string, fileName: string) => void;
 }) {
   const { formatDate } = useWorkspaceFormat();
   return (
@@ -661,7 +687,9 @@ function HistoryPanel({
       </div>
       <ol className="relative px-5 py-4">
         <div className="absolute bottom-4 left-[30px] top-4 w-px bg-border" />
-        {history.map((c) => (
+        {history.map((c) => {
+          const certLabel = c.certificateNo || c.certificateFileName;
+          return (
           <li key={c.id} className="relative flex gap-4 py-3">
             <div
               className={cn(
@@ -688,6 +716,27 @@ function HistoryPanel({
               <p className="text-xs text-muted-foreground">
                 By {c.technician || "—"} · {c.provider || "—"}
               </p>
+              {c.hasCertificate ? (
+                c.certificateId && onPreviewCertificate ? (
+                  <button
+                    type="button"
+                    className="mt-1 inline-flex max-w-full items-center gap-1.5 text-xs text-primary hover:underline"
+                    onClick={() =>
+                      onPreviewCertificate(c.certificateId!, certLabel || c.certificateFileName || "Certificate")
+                    }
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{certLabel || "Certificate attached"}</span>
+                  </button>
+                ) : (
+                  <p className="mt-1 inline-flex max-w-full items-center gap-1.5 text-xs text-muted-foreground">
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{certLabel || "Certificate attached"}</span>
+                  </p>
+                )
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">No certificate linked</p>
+              )}
               {c.notes && (
                 <p className="mt-1 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs text-foreground">
                   {c.notes}
@@ -695,7 +744,8 @@ function HistoryPanel({
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
         {history.length === 0 && (
           <li className="py-6 text-center text-sm text-muted-foreground">
             No calibration history yet.
